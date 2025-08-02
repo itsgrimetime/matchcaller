@@ -1,0 +1,53 @@
+{
+    "python.defaultInterpreterPath": "./venv/bin/python",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": true,
+    "python.linting.mypyEnabled": true,
+    "python.formatting.provider": "black",
+    "python.sortImports.args": ["--profile", "black"],
+    "python.terminal.activateEnvironment": true,
+    "python.languageServer": "None",
+    "vsintellicode.python.completionsEnabled": false,
+
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.formatOnPaste": true,
+        "editor.autoIndent": "full",
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit",
+            "source.fixAll.ruff": "explicit",
+            "source.fixAll.black": "explicit"
+        },
+        "editor.lightBulb.enabled": true,
+        "diffEditor.ignoreTrimWhitespace": false,
+        "editor.defaultColorDecorators": "never",
+        "editor.rulers": [88],
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true
+    },
+
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/*.pyo": true,
+        "**/*.egg-info": true,
+        "**/.pytest_cache": true,
+        "**/.mypy_cache": true,
+        "**/dist": true,
+        "**/build": true
+    },
+
+    "terminal.integrated.scrollback": 5000000,
+    "terminal.integrated.persistentSessionScrollback": 30000,
+    "git.openRepositoryInParentFolders": "never",
+    "git.autofetch": true,
+
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": false,
+
+    "editor.rulers": [88],
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+    "files.trimFinalNewlines": true
+}

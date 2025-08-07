@@ -7,9 +7,9 @@ from typing import List, Optional
 try:
     from textual import work
     from textual.app import App, ComposeResult
-    from textual.containers import Container
+    from textual.containers import Container, Vertical, ScrollableContainer
     from textual.reactive import reactive
-    from textual.widgets import DataTable, Footer, Header, Label
+    from textual.widgets import DataTable, Footer, Header, Label, Static
 except ImportError:
     raise ImportError(
         "Missing required dependencies. Please install with: pip install textual aiohttp"
@@ -41,11 +41,31 @@ class TournamentDisplay(App):
         background: $primary-darken-1;
     }
 
-    DataTable {
+    #main-container {
         height: 1fr;
+        overflow-y: auto;
+    }
+
+    .pool-section {
         margin: 1;
+        padding: 0;
         border: solid $primary;
-        min-height: 10;
+        height: auto;
+    }
+
+    .pool-title {
+        background: $primary;
+        color: $text;
+        padding: 0 1;
+        text-align: center;
+        height: 1;
+    }
+
+    .pool-table {
+        height: auto;
+        min-height: 3;
+        border: none;
+        margin: 0;
     }
 
     .highlight {
@@ -87,20 +107,16 @@ class TournamentDisplay(App):
     def compose(self) -> ComposeResult:
         """Create the UI layout"""
         yield Header()
-        yield DataTable(id="matches-table")
+        yield ScrollableContainer(id="main-container")
         yield Footer()
 
     def on_mount(self) -> None:
         """Initialize the app"""
         log("🏁 on_mount() called")
-        # Set up the data table
-        table = self.query_one("#matches-table", DataTable)
-        table.add_columns("Match", "Bracket", "Status", "Duration")
-        table.cursor_type = "row"
 
-        # Test with mock data first to verify the UI works
-        log("🧪 Testing with mock data first...")
-        self.load_mock_data()
+        # Show loading state
+        log("📡 Showing loading state...")
+        self.show_loading_state()
 
         # Start periodic updates
         self.set_interval(1.0, self.update_display)  # Update every second
@@ -109,9 +125,28 @@ class TournamentDisplay(App):
         )  # Fetch fresh data every 30 seconds
 
         log("🚀 Starting initial data fetch...")
-        # Initial fetch - run immediately after a delay
-        self.set_timer(3.0, self.fetch_tournament_data)  # Wait 3 seconds then fetch
-        log("🚀 Initial fetch scheduled")
+        # Initial fetch - run immediately
+        self.fetch_tournament_data()
+        log("🚀 Initial fetch started")
+
+    def show_loading_state(self) -> None:
+        """Show loading message while fetching data"""
+        self.event_name = "Fetching tournament data from start.gg..."
+        self.matches = []
+        self.total_sets = 0
+        self.ready_sets = 0
+        self.in_progress_sets = 0
+        self.last_update = "Loading..."
+        
+        # Add a loading message to the main container
+        container = self.query_one("#main-container", ScrollableContainer)
+        container.mount(
+            Vertical(
+                Static("🔄 Fetching tournament data from start.gg...", classes="pool-title"),
+                Static("Please wait while we load match information.", id="loading-message"),
+                classes="pool-section"
+            )
+        )
 
     def load_mock_data(self) -> None:
         """Load mock data to test the UI"""
@@ -176,75 +211,165 @@ class TournamentDisplay(App):
             self.last_update = f"Error at {datetime.now().strftime('%H:%M:%S')}"
 
     def update_table(self) -> None:
-        """Update the matches table"""
+        """Update the matches display with separate pool sections"""
         log(f"🔄 update_table() called with {len(self.matches)} matches")
-        table = self.query_one("#matches-table", DataTable)
-        table.clear()
+        
+        container = self.query_one("#main-container", ScrollableContainer)
 
         if not self.matches:
             log("⚠️  No matches to display")
+            # Only clear if we need to show "no matches"
+            if not container.query("#no-matches"):
+                container.remove_children()
+                container.mount(
+                    Vertical(
+                        Static("No matches found", classes="pool-title"),
+                        Static("No active matches at this time.", id="no-matches"),
+                        classes="pool-section"
+                    )
+                )
             return
 
-        # Sort matches: In Progress first, then Ready, then Waiting
-        sorted_matches = sorted(
-            self.matches,
-            key=lambda m: (
-                # Check if state 2 match has actually started
-                (
-                    0
-                    if (m.state == 2 and m.started_at)
-                    else 1 if m.state == 2 else 2 if m.state == 6 else 3
-                ),  # Priority order
-                -m.updated_at,  # Most recent first within each priority
-            ),
-        )
+        # Group matches by pool
+        from collections import defaultdict
+        pools = defaultdict(list)
+        for match in self.matches:
+            pools[match.pool].append(match)
+        
+        log(f"🔄 Found {len(pools)} pools: {list(pools.keys())}")
 
-        log(f"🔄 Adding {len(sorted_matches)} rows to table")
-        for i, match in enumerate(sorted_matches):
-            # Highlight ready matches
-            style = "bold red" if match.state == 2 else None
+        # Check if we need to rebuild the entire structure
+        existing_pools = {section.id for section in container.query(".pool-section")}
+        new_pools = {f"pool-{pool.lower().replace(' ', '-')}" for pool in pools.keys()}
+        
+        rebuild_needed = existing_pools != new_pools
+        
+        if rebuild_needed:
+            log("🔄 Pool structure changed, rebuilding sections")
+            container.remove_children()
+        else:
+            log("🔄 Pool structure unchanged, updating existing tables")
 
-            row_data = [
-                match.match_name,
-                match.bracket,
-                f"{match.status_icon} {match.status_text}",
-                match.time_since_ready,
-            ]
-            log(f"🔄 Adding row {i}: {row_data}")
+        # Sort pools by name for consistent ordering
+        sorted_pools = sorted(pools.keys())
+        
+        for pool_name in sorted_pools:
+            pool_matches = pools[pool_name]
+            pool_id = f"pool-{pool_name.lower().replace(' ', '-')}"
+            
+            # Sort matches within each pool: In Progress first, then Ready, then Waiting
+            sorted_matches = sorted(
+                pool_matches,
+                key=lambda m: (
+                    # Check if state 2 match has actually started
+                    (
+                        0
+                        if (m.state == 2 and m.started_at)
+                        else 1 if m.state == 2 else 2 if m.state == 6 else 3
+                    ),  # Priority order
+                    -m.updated_at,  # Most recent first within each priority
+                ),
+            )
+            
+            if rebuild_needed:
+                # Create a new DataTable for this pool
+                pool_table = DataTable(classes="pool-table")
+                pool_table.add_columns("Match", "Bracket", "Status", "Duration")
+                pool_table.cursor_type = "row"
+                
+                # Add matches to the pool table
+                for match in sorted_matches:
+                    row_data = [
+                        match.match_name,
+                        match.bracket,
+                        f"{match.status_icon} {match.status_text}",
+                        match.time_since_ready,
+                    ]
+                    pool_table.add_row(*row_data, key=str(match.id))
+                
+                # Create pool section with title and table
+                pool_section = Vertical(
+                    Static(pool_name, classes="pool-title"),
+                    pool_table,
+                    classes="pool-section",
+                    id=pool_id
+                )
+                
+                container.mount(pool_section)
+                log(f"🔄 Added pool section: {pool_name} with {len(sorted_matches)} matches")
+            else:
+                # Update existing pool table
+                try:
+                    pool_section = container.query_one(f"#{pool_id}")
+                    pool_table = pool_section.query_one(DataTable)
+                    pool_table.clear()
+                    
+                    # Add updated matches
+                    for match in sorted_matches:
+                        row_data = [
+                            match.match_name,
+                            match.bracket,
+                            f"{match.status_icon} {match.status_text}",
+                            match.time_since_ready,
+                        ]
+                        pool_table.add_row(*row_data, key=str(match.id))
+                    
+                    log(f"🔄 Updated existing pool: {pool_name} with {len(sorted_matches)} matches")
+                except Exception as e:
+                    log(f"⚠️  Could not update pool {pool_name}: {e}")
 
-            table.add_row(*row_data, key=str(match.id))
-
-        log("✅ Table updated successfully")
+        log("✅ Table updated successfully with separate pool sections")
 
     def update_display(self) -> None:
         """Update time-dependent displays (called every second)"""
-        # Update time calculations in the table (for ready matches)
         if not self.matches:
             return
 
-        table = self.query_one("#matches-table", DataTable)
+        # Update duration timers every second by updating just the duration column
         try:
-            # Sort matches same as update_table to get correct row indices
-            sorted_matches = sorted(
-                self.matches,
-                key=lambda m: (
-                    0 if m.state == 2 else 1 if m.state == 6 else 2,
-                    -m.updated_at,
-                ),
-            )
-
-            for i, match in enumerate(sorted_matches):
-                if match.state in [1, 2, 6] or (
-                    match.state == 2 and match.started_at
-                ):  # Waiting, Ready, In Progress, or Started matches - update time
-                    try:
-                        table.update_cell_at((i, 3), match.time_since_ready)
-                    except:
-                        pass  # Handle any table update errors gracefully
+            container = self.query_one("#main-container", ScrollableContainer)
+            
+            # Group matches by pool to match the UI structure
+            from collections import defaultdict
+            pools = defaultdict(list)
+            for match in self.matches:
+                pools[match.pool].append(match)
+            
+            for pool_name in sorted(pools.keys()):
+                pool_matches = pools[pool_name]
+                pool_id = f"pool-{pool_name.lower().replace(' ', '-')}"
+                
+                # Sort matches same as update_table
+                sorted_matches = sorted(
+                    pool_matches,
+                    key=lambda m: (
+                        (
+                            0
+                            if (m.state == 2 and m.started_at)
+                            else 1 if m.state == 2 else 2 if m.state == 6 else 3
+                        ),
+                        -m.updated_at,
+                    ),
+                )
+                
+                try:
+                    pool_section = container.query_one(f"#{pool_id}")
+                    pool_table = pool_section.query_one(DataTable)
+                    
+                    # Update just the duration column (column 3) for each match
+                    for i, match in enumerate(sorted_matches):
+                        pool_table.update_cell_at((i, 3), match.time_since_ready)
+                        
+                except Exception as e:
+                    # If individual updates fail, fall back to full refresh every 10 seconds
+                    if int(time.time()) % 10 == 0:
+                        self.update_table()
+                        break
+                        
         except Exception as e:
             # Only print this error occasionally to avoid spam
-            if int(time.time()) % 30 == 0:  # Every 30 seconds
-                log(f"⚠️  Could not update table times: {e}")
+            if int(time.time()) % 30 == 0:
+                log(f"⚠️  Could not update display: {e}")
 
     def action_refresh(self) -> None:
         """Manually refresh data"""

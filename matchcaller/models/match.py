@@ -26,6 +26,7 @@ class MatchRow:
     def __init__(self, set_data: Dict):
         self.id = set_data["id"]
         self.bracket = set_data["displayName"]
+        self.pool = set_data.get("poolName", "Unknown Pool")
         self.player1 = set_data["player1"]["tag"] if set_data["player1"] else "TBD"
         self.player2 = set_data["player2"]["tag"] if set_data["player2"] else "TBD"
         self.state = set_data["state"]
@@ -69,8 +70,11 @@ class MatchRow:
         """Calculate time since match became ready, started, or was last updated"""
         now = int(time.time())
 
-        if self.state == 2:  # Ready to be called
-            diff = now - self.updated_at
+        if self.state == 2:  # Ready to be called or In Progress
+            # Use startedAt if available (match is actually in progress)
+            # Otherwise use updatedAt (match is just ready)
+            timestamp = self.started_at if self.started_at else self.updated_at
+            diff = now - timestamp
 
             if diff < 60:
                 return f"{diff}s"

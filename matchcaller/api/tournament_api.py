@@ -118,6 +118,8 @@ class TournamentAPI:
                             }
                         }
                         phaseGroup {
+                            displayIdentifier
+                            bracketType
                             phase {
                                 name
                             }
@@ -263,11 +265,28 @@ class TournamentAPI:
 
                 # Create bracket name from phase and round info
                 bracket_name = "Unknown Bracket"
-                if set_data.get("phaseGroup") and set_data["phaseGroup"].get("phase"):
-                    phase_name = set_data["phaseGroup"]["phase"]["name"]
-                    bracket_name = phase_name
+                pool_name = "Unknown Pool"
+                
+                if set_data.get("phaseGroup"):
+                    phase_group = set_data["phaseGroup"]
+                    
+                    # Get pool/group identifier and format it nicely
+                    if phase_group.get("displayIdentifier"):
+                        raw_identifier = phase_group["displayIdentifier"]
+                        # Format pool names nicely
+                        if raw_identifier.isdigit():
+                            pool_name = f"Pool {raw_identifier}"
+                        elif raw_identifier.isalpha() and len(raw_identifier) == 1:
+                            pool_name = f"Pool {raw_identifier.upper()}"
+                        else:
+                            pool_name = raw_identifier
+                    
+                    # Get phase name for bracket
+                    if phase_group.get("phase") and phase_group["phase"].get("name"):
+                        phase_name = phase_group["phase"]["name"]
+                        bracket_name = phase_name
 
-                # Add round information
+                # Add round information to bracket name
                 if set_data.get("fullRoundText"):
                     bracket_name += f" - {set_data['fullRoundText']}"
                 elif set_data.get("identifier"):
@@ -283,6 +302,7 @@ class TournamentAPI:
                 parsed_set = {
                     "id": set_data["id"],
                     "displayName": bracket_name,
+                    "poolName": pool_name,
                     "player1": {"tag": player1_name},
                     "player2": {"tag": player2_name},
                     "state": set_data["state"],

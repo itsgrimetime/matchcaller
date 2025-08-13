@@ -19,7 +19,3 @@ logger = logging.getLogger(__name__)
 def log(message):
     """Log to file only (no console output to avoid TUI interference)"""
     logger.info(message)
-    # Also write directly to file to be extra sure
-    with open("/tmp/tournament_debug.log", "a") as f:
-        f.write(f"{datetime.now()} - {message}\n")
-        f.flush()

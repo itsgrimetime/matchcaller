@@ -11,7 +11,8 @@ from ..utils.logging import log
 
 
 MOCK_TOURNAMENT_DATA = {
-    "event_name": "Summer Showdown 2025",
+    "event_name": "Singles Tournament",
+    "tournament_name": "Summer Showdown 2025",
     "sets": [
         {
             "id": 1,
@@ -94,6 +95,9 @@ class TournamentAPI:
         query EventSets($eventId: ID!, $page: Int!, $perPage: Int!) {
             event(id: $eventId) {
                 name
+                tournament {
+                    name
+                }
                 sets(
                     page: $page
                     perPage: $perPage
@@ -234,6 +238,7 @@ class TournamentAPI:
         try:
             event_data = data["data"]["event"]
             event_name = event_data["name"]
+            tournament_name = event_data.get("tournament", {}).get("name", "Unknown Tournament")
             sets_data = event_data["sets"]["nodes"]
 
             parsed_sets = []
@@ -324,7 +329,11 @@ class TournamentAPI:
                     f"📋 Parsed set: {player1_name} vs {player2_name} ({bracket_name}) - State: {set_data['state']}"
                 )
 
-            result = {"event_name": event_name, "sets": parsed_sets}
+            result = {
+                "event_name": event_name, 
+                "tournament_name": tournament_name,
+                "sets": parsed_sets
+            }
             log(f"✅ Successfully parsed {len(parsed_sets)} sets")
             return result
 

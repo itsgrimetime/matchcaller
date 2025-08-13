@@ -286,10 +286,10 @@ class TournamentDisplay(App):
             if rebuild_needed:
                 # Create a new DataTable for this pool
                 pool_table = DataTable(classes="pool-table")
-                pool_table.add_column("Match", width=24)
-                pool_table.add_column("Bracket", width=32)
-                pool_table.add_column("Status", width=12)
-                pool_table.add_column("Duration", width=12)
+                pool_table.add_column("Match", width=32)
+                pool_table.add_column("Bracket", width=28)
+                pool_table.add_column("Status", width=18)
+                pool_table.add_column("Duration", width=18)
                 pool_table.cursor_type = "row"
 
                 # Add matches to the pool table

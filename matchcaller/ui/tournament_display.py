@@ -1,15 +1,16 @@
 """Main tournament display TUI application."""
 
 import time
+from collections.abc import Coroutine
 from datetime import datetime
-from typing import List, Optional
+from typing import Any
 
 try:
     from textual import work
     from textual.app import App, ComposeResult
-    from textual.containers import Container, ScrollableContainer, Vertical
+    from textual.containers import ScrollableContainer, Vertical
     from textual.reactive import reactive
-    from textual.widgets import DataTable, Footer, Header, Label, Static
+    from textual.widgets import DataTable, Footer, Header, Static
 except ImportError:
     raise ImportError(
         "Missing required dependencies. Please install with: pip install textual aiohttp"
@@ -92,14 +93,13 @@ class TournamentDisplay(App):
 
     def __init__(
         self,
-        api_token: Optional[str] = None,
-        event_id: Optional[str] = None,
-        event_slug: Optional[str] = None,
+        api_token: str | None = None,
+        event_id: str | None = None,
+        event_slug: str | None = None,
     ):
         super().__init__()
-        self.api = TournamentAPI(api_token, event_id, event_slug)
-        self.matches: List[MatchRow] = []
-        self.refresh_timer = None
+        self.api: TournamentAPI = TournamentAPI(api_token, event_id, event_slug)
+        self.matches: list[MatchRow] = []
         # Set initial title - will be updated when tournament data is loaded
         self.title = "Loading Tournament..."
         log(
@@ -184,7 +184,9 @@ class TournamentDisplay(App):
 
             self.event_name = data["event_name"]
             tournament_name = data.get("tournament_name", "Unknown Tournament")
-            self.title = f"{tournament_name} - {self.event_name}"  # Update the header title
+            self.title = (
+                f"{tournament_name} - {self.event_name}"  # Update the header title
+            )
             log(f"🔄 Event name set to: {self.event_name}")
             log(f"🔄 Tournament title set to: {self.title}")
 
@@ -231,8 +233,8 @@ class TournamentDisplay(App):
             log("⚠️  No matches to display")
             # Only clear if we need to show "no matches"
             if not container.query("#no-matches"):
-                container.remove_children()
-                container.mount(
+                _ = container.remove_children()
+                _ = container.mount(
                     Vertical(
                         Static("No matches found", classes="pool-title"),
                         Static("No active matches at this time.", id="no-matches"),
@@ -287,7 +289,6 @@ class TournamentDisplay(App):
                 # Create a new DataTable for this pool
                 pool_table = DataTable(classes="pool-table")
                 pool_table.add_column("Match", width=32)
-                pool_table.add_column("Bracket", width=28)
                 pool_table.add_column("Status", width=18)
                 pool_table.add_column("Duration", width=18)
                 pool_table.cursor_type = "row"
@@ -296,7 +297,6 @@ class TournamentDisplay(App):
                 for match in sorted_matches:
                     row_data = [
                         match.match_name,
-                        match.bracket,
                         f"{match.status_icon} {match.status_text}",
                         match.time_since_ready,
                     ]
@@ -325,7 +325,6 @@ class TournamentDisplay(App):
                     for match in sorted_matches:
                         row_data = [
                             match.match_name,
-                            match.bracket,
                             f"{match.status_icon} {match.status_text}",
                             match.time_since_ready,
                         ]
@@ -397,8 +396,6 @@ class TournamentDisplay(App):
         self.fetch_tournament_data()
         self.notify("Refreshing tournament data...")
 
-    def action_quit(self) -> None:
+    def action_quit(self) -> Coroutine[Any, Any, None]:
         """Quit the application"""
-        if self.refresh_timer:
-            self.refresh_timer.cancel()
         self.exit()

@@ -144,16 +144,6 @@ class TournamentAPI:
                         }
                         phaseGroup {
                             displayIdentifier
-                            bracketType
-                            phase {
-                                name
-                            }
-                        }
-                        stream {
-                            streamName
-                        }
-                        station {
-                            number
                         }
                     }
                 }
@@ -164,7 +154,7 @@ class TournamentAPI:
         variables = {
             "eventId": self.event_id,
             "page": 1,
-            "perPage": 200,  # Increase to capture more matches
+            "perPage": 100,  # Increased after simplifying query to reduce complexity
         }
 
         headers = {

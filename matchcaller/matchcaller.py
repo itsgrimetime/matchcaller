@@ -151,7 +151,6 @@ class TournamentAPI:
                         updatedAt
                         startedAt
                         completedAt
-                        round
                         slots {
                             id
                             entrant {
@@ -161,9 +160,6 @@ class TournamentAPI:
                                     id
                                     gamerTag
                                 }
-                            }
-                            seed {
-                                seedNum
                             }
                         }
                         phaseGroup {

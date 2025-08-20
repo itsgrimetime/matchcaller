@@ -305,6 +305,15 @@ def main():
         api_token=token_to_use, event_id=event_to_use, event_slug=slug_to_use
     )
 
+    def cleanup_terminal():
+        """Cleanup terminal state to prevent mouse tracking issues"""
+        try:
+            import sys
+            sys.stdout.write('\033[?1000l\033[?1003l\033[?1015l\033[?1006l\033[?25h\033[?1004l')
+            sys.stdout.flush()
+        except Exception:
+            pass
+
     try:
         log("🏁 Starting Textual app...")
         app.run()
@@ -313,9 +322,9 @@ def main():
         log("\n👋 Tournament display stopped")
     except Exception as e:
         log(f"❌ App crashed: {type(e).__name__}: {e}")
-        import traceback
-
-        log(f"❌ Full traceback: {traceback.format_exc()}")
+    finally:
+        # Always clean up terminal state regardless of how app exits
+        cleanup_terminal()
 
 
 if __name__ == "__main__":

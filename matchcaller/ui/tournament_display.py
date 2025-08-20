@@ -8,7 +8,7 @@ from typing import Any
 try:
     from textual import work
     from textual.app import App, ComposeResult
-    from textual.containers import ScrollableContainer, Vertical
+    from textual.containers import Horizontal, ScrollableContainer, Vertical
     from textual.reactive import reactive
     from textual.widgets import DataTable, Footer, Header, Static
 except ImportError:
@@ -47,11 +47,23 @@ class TournamentDisplay(App):
         overflow-y: auto;
     }
 
+    #pools-container {
+        width: 1fr;
+        height: 1fr;
+    }
+
+    .pool-column {
+        width: 1fr;
+        padding: 0 1;
+        overflow-y: auto;
+    }
+
     .pool-section {
-        margin: 1;
+        margin: 0 0 1 0;
         padding: 0;
         border: solid $primary;
         height: auto;
+        width: 1fr;
     }
 
     .pool-title {
@@ -109,7 +121,10 @@ class TournamentDisplay(App):
     def compose(self) -> ComposeResult:
         """Create the UI layout"""
         yield Header()
-        yield ScrollableContainer(id="main-container")
+        yield ScrollableContainer(
+            Horizontal(id="pools-container"),
+            id="main-container"
+        )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -140,19 +155,24 @@ class TournamentDisplay(App):
         self.in_progress_sets = 0
         self.last_update = "Loading..."
 
-        # Add a loading message to the main container
-        container = self.query_one("#main-container", ScrollableContainer)
-        container.mount(
-            Vertical(
-                Static(
-                    "🔄 Fetching tournament data from start.gg...", classes="pool-title"
-                ),
-                Static(
-                    "Please wait while we load match information.", id="loading-message"
-                ),
-                classes="pool-section",
+        # Add a loading message to the pools container
+        try:
+            container = self.query_one("#main-container", ScrollableContainer)
+            pools_container = container.query_one("#pools-container", Horizontal)
+            pools_container.remove_children()  # Clear any existing content
+            pools_container.mount(
+                Vertical(
+                    Static(
+                        "🔄 Fetching tournament data from start.gg...", classes="pool-title"
+                    ),
+                    Static(
+                        "Please wait while we load match information.", id="loading-message"
+                    ),
+                    classes="pool-section",
+                )
             )
-        )
+        except Exception as e:
+            log(f"⚠️  Could not show loading state: {e}")
 
     def load_mock_data(self) -> None:
         """Load mock data to test the UI"""
@@ -224,17 +244,18 @@ class TournamentDisplay(App):
             self.last_update = f"Error at {datetime.now().strftime('%H:%M:%S')}"
 
     def update_table(self) -> None:
-        """Update the matches display with separate pool sections"""
+        """Update the matches display with vertical pool columns"""
         log(f"🔄 update_table() called with {len(self.matches)} matches")
 
         container = self.query_one("#main-container", ScrollableContainer)
+        pools_container = container.query_one("#pools-container", Horizontal)
 
         if not self.matches:
             log("⚠️  No matches to display")
             # Only clear if we need to show "no matches"
-            if not container.query("#no-matches"):
-                _ = container.remove_children()
-                _ = container.mount(
+            if not pools_container.query("#no-matches"):
+                pools_container.remove_children()
+                pools_container.mount(
                     Vertical(
                         Static("No matches found", classes="pool-title"),
                         Static("No active matches at this time.", id="no-matches"),
@@ -253,44 +274,70 @@ class TournamentDisplay(App):
         log(f"🔄 Found {len(pools)} pools: {list(pools.keys())}")
 
         # Check if we need to rebuild the entire structure
-        existing_pools = {section.id for section in container.query(".pool-section")}
+        existing_pools = {section.id for section in pools_container.query(".pool-section")}
         new_pools = {f"pool-{pool.lower().replace(' ', '-')}" for pool in pools.keys()}
-
-        rebuild_needed = existing_pools != new_pools
+        
+        # Always rebuild if there's a loading message present
+        has_loading_message = bool(pools_container.query("#loading-message"))
+        
+        rebuild_needed = existing_pools != new_pools or has_loading_message
 
         if rebuild_needed:
-            log("🔄 Pool structure changed, rebuilding sections")
-            container.remove_children()
+            log("🔄 Pool structure changed, rebuilding columns")
+            pools_container.remove_children()
         else:
             log("🔄 Pool structure unchanged, updating existing tables")
 
         # Sort pools by name for consistent ordering
         sorted_pools = sorted(pools.keys())
+        
+        # Calculate number of columns based on number of pools
+        num_pools = len(sorted_pools)
+        if num_pools == 1:
+            num_columns = 1
+        elif num_pools <= 4:
+            num_columns = 2
+        elif num_pools <= 6:
+            num_columns = 3
+        else:
+            num_columns = 4
+            
+        log(f"🔄 Organizing {num_pools} pools into {num_columns} columns")
 
-        for pool_name in sorted_pools:
-            pool_matches = pools[pool_name]
-            pool_id = f"pool-{pool_name.lower().replace(' ', '-')}"
+        if rebuild_needed:
+            # Create column containers
+            columns = []
+            for i in range(num_columns):
+                column = Vertical(classes="pool-column", id=f"column-{i}")
+                columns.append(column)
+                pools_container.mount(column)
+            
+            # Distribute pools across columns
+            for i, pool_name in enumerate(sorted_pools):
+                column_index = i % num_columns
+                column = columns[column_index]
+                pool_matches = pools[pool_name]
+                pool_id = f"pool-{pool_name.lower().replace(' ', '-')}"
 
-            # Sort matches within each pool: In Progress first, then Ready, then Waiting
-            sorted_matches = sorted(
-                pool_matches,
-                key=lambda m: (
-                    # Check if state 2 match has actually started
-                    (
-                        0
-                        if (m.state == 2 and m.started_at)
-                        else 1 if m.state == 2 else 2 if m.state == 6 else 3
-                    ),  # Priority order
-                    -m.updated_at,  # Most recent first within each priority
-                ),
-            )
+                # Sort matches within each pool: In Progress first, then Ready, then Waiting
+                sorted_matches = sorted(
+                    pool_matches,
+                    key=lambda m: (
+                        # Check if state 2 match has actually started
+                        (
+                            0
+                            if (m.state == 2 and m.started_at)
+                            else 1 if m.state == 2 else 2 if m.state == 6 else 3
+                        ),  # Priority order
+                        -m.updated_at,  # Most recent first within each priority
+                    ),
+                )
 
-            if rebuild_needed:
                 # Create a new DataTable for this pool
                 pool_table = DataTable(classes="pool-table")
-                pool_table.add_column("Match", width=32)
-                pool_table.add_column("Status", width=18)
-                pool_table.add_column("Duration", width=18)
+                pool_table.add_column("Match", width=28)
+                pool_table.add_column("Status", width=16)
+                pool_table.add_column("Duration", width=14)
                 pool_table.cursor_type = "row"
 
                 # Add matches to the pool table
@@ -310,14 +357,31 @@ class TournamentDisplay(App):
                     id=pool_id,
                 )
 
-                container.mount(pool_section)
+                column.mount(pool_section)
                 log(
-                    f"🔄 Added pool section: {pool_name} with {len(sorted_matches)} matches"
+                    f"🔄 Added pool section: {pool_name} to column {column_index} with {len(sorted_matches)} matches"
                 )
-            else:
-                # Update existing pool table
+        else:
+            # Update existing pool tables
+            for pool_name in sorted_pools:
+                pool_matches = pools[pool_name]
+                pool_id = f"pool-{pool_name.lower().replace(' ', '-')}"
+                
+                # Sort matches within each pool
+                sorted_matches = sorted(
+                    pool_matches,
+                    key=lambda m: (
+                        (
+                            0
+                            if (m.state == 2 and m.started_at)
+                            else 1 if m.state == 2 else 2 if m.state == 6 else 3
+                        ),
+                        -m.updated_at,
+                    ),
+                )
+
                 try:
-                    pool_section = container.query_one(f"#{pool_id}")
+                    pool_section = pools_container.query_one(f"#{pool_id}")
                     pool_table = pool_section.query_one(DataTable)
                     pool_table.clear()
 
@@ -396,6 +460,21 @@ class TournamentDisplay(App):
         self.fetch_tournament_data()
         self.notify("Refreshing tournament data...")
 
+    def on_unmount(self) -> None:
+        """Clean up when app is unmounted"""
+        self._cleanup_terminal()
+        
+    def _cleanup_terminal(self) -> None:
+        """Ensure terminal state is properly restored"""
+        try:
+            # Force disable mouse tracking and restore cursor
+            import sys
+            sys.stdout.write('\033[?1000l\033[?1003l\033[?1015l\033[?1006l\033[?25h\033[?1004l')
+            sys.stdout.flush()
+        except Exception:
+            pass
+
     def action_quit(self) -> Coroutine[Any, Any, None]:
         """Quit the application"""
+        self._cleanup_terminal()
         self.exit()

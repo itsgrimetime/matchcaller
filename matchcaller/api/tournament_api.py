@@ -21,6 +21,7 @@ MOCK_TOURNAMENT_DATA = {
             "player2": {"tag": "Bob"},
             "state": 2,  # Ready to be called
             "updatedAt": int(time.time()) - 300,  # 5 minutes ago
+            "poolName": "Pool A",
         },
         {
             "id": 2,
@@ -29,6 +30,7 @@ MOCK_TOURNAMENT_DATA = {
             "player2": {"tag": "Dave"},
             "state": 6,  # In progress
             "updatedAt": int(time.time()) - 120,  # 2 minutes ago
+            "poolName": "Pool A",
         },
         {
             "id": 3,
@@ -37,6 +39,7 @@ MOCK_TOURNAMENT_DATA = {
             "player2": {"tag": "Frank"},
             "state": 1,  # Not started
             "updatedAt": int(time.time()) - 60,
+            "poolName": "Pool B",
         },
         {
             "id": 4,
@@ -45,6 +48,25 @@ MOCK_TOURNAMENT_DATA = {
             "player2": {"tag": "Winner B"},
             "state": 1,  # Not started
             "updatedAt": int(time.time()) - 30,
+            "poolName": "Pool B",
+        },
+        {
+            "id": 5,
+            "displayName": "Winners Semis",
+            "player1": {"tag": "Grace"},
+            "player2": {"tag": "Henry"},
+            "state": 2,  # Ready
+            "updatedAt": int(time.time()) - 180,
+            "poolName": "Pool C",
+        },
+        {
+            "id": 6,
+            "displayName": "Losers Finals",
+            "player1": {"tag": "Isaac"},
+            "player2": {"tag": "Julia"},
+            "state": 1,  # Waiting
+            "updatedAt": int(time.time()) - 90,
+            "poolName": "Pool C",
         },
     ],
 }
@@ -143,7 +165,7 @@ class TournamentAPI:
         variables = {
             "eventId": self.event_id,
             "page": 1,
-            "perPage": 50,  # Reduce to avoid complexity limits
+            "perPage": 200,  # Increase to capture more matches
         }
 
         headers = {
@@ -242,6 +264,10 @@ class TournamentAPI:
             sets_data = event_data["sets"]["nodes"]
 
             parsed_sets = []
+            total_sets = len(sets_data)
+            skipped_tbd_count = 0
+            log(f"🔍 Processing {total_sets} sets from API")
+            
             for set_data in sets_data:
                 # Extract player names from slots
                 player1_name = "TBD"
@@ -301,6 +327,7 @@ class TournamentAPI:
 
                 # Skip matches where both players are TBD (not yet determined)
                 if player1_name == "TBD" and player2_name == "TBD":
+                    skipped_tbd_count += 1
                     log(f"⏭️  Skipping TBD vs TBD match: {bracket_name}")
                     continue
 
@@ -335,6 +362,7 @@ class TournamentAPI:
                 "sets": parsed_sets
             }
             log(f"✅ Successfully parsed {len(parsed_sets)} sets")
+            log(f"📊 Total sets from API: {total_sets}, Skipped TBD vs TBD: {skipped_tbd_count}, Included: {len(parsed_sets)}")
             return result
 
         except Exception as e:

@@ -121,10 +121,7 @@ class TournamentDisplay(App):
     def compose(self) -> ComposeResult:
         """Create the UI layout"""
         yield Header()
-        yield ScrollableContainer(
-            Horizontal(id="pools-container"),
-            id="main-container"
-        )
+        yield ScrollableContainer(Horizontal(id="pools-container"), id="main-container")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -163,10 +160,12 @@ class TournamentDisplay(App):
             pools_container.mount(
                 Vertical(
                     Static(
-                        "🔄 Fetching tournament data from start.gg...", classes="pool-title"
+                        "🔄 Fetching tournament data from start.gg...",
+                        classes="pool-title",
                     ),
                     Static(
-                        "Please wait while we load match information.", id="loading-message"
+                        "Please wait while we load match information.",
+                        id="loading-message",
                     ),
                     classes="pool-section",
                 )
@@ -274,12 +273,14 @@ class TournamentDisplay(App):
         log(f"🔄 Found {len(pools)} pools: {list(pools.keys())}")
 
         # Check if we need to rebuild the entire structure
-        existing_pools = {section.id for section in pools_container.query(".pool-section")}
+        existing_pools = {
+            section.id for section in pools_container.query(".pool-section")
+        }
         new_pools = {f"pool-{pool.lower().replace(' ', '-')}" for pool in pools.keys()}
-        
+
         # Always rebuild if there's a loading message present
         has_loading_message = bool(pools_container.query("#loading-message"))
-        
+
         rebuild_needed = existing_pools != new_pools or has_loading_message
 
         if rebuild_needed:
@@ -290,7 +291,7 @@ class TournamentDisplay(App):
 
         # Sort pools by name for consistent ordering
         sorted_pools = sorted(pools.keys())
-        
+
         # Calculate number of columns based on number of pools
         num_pools = len(sorted_pools)
         if num_pools == 1:
@@ -301,7 +302,7 @@ class TournamentDisplay(App):
             num_columns = 3
         else:
             num_columns = 4
-            
+
         log(f"🔄 Organizing {num_pools} pools into {num_columns} columns")
 
         if rebuild_needed:
@@ -311,7 +312,7 @@ class TournamentDisplay(App):
                 column = Vertical(classes="pool-column", id=f"column-{i}")
                 columns.append(column)
                 pools_container.mount(column)
-            
+
             # Distribute pools across columns
             for i, pool_name in enumerate(sorted_pools):
                 column_index = i % num_columns
@@ -335,9 +336,9 @@ class TournamentDisplay(App):
 
                 # Create a new DataTable for this pool
                 pool_table = DataTable(classes="pool-table")
-                pool_table.add_column("Match", width=28)
+                pool_table.add_column("Match", width=32)
                 pool_table.add_column("Status", width=16)
-                pool_table.add_column("Duration", width=14)
+                pool_table.add_column("Duration", width=12)
                 pool_table.cursor_type = "row"
 
                 # Add matches to the pool table
@@ -366,7 +367,7 @@ class TournamentDisplay(App):
             for pool_name in sorted_pools:
                 pool_matches = pools[pool_name]
                 pool_id = f"pool-{pool_name.lower().replace(' ', '-')}"
-                
+
                 # Sort matches within each pool
                 sorted_matches = sorted(
                     pool_matches,
@@ -463,13 +464,16 @@ class TournamentDisplay(App):
     def on_unmount(self) -> None:
         """Clean up when app is unmounted"""
         self._cleanup_terminal()
-        
+
     def _cleanup_terminal(self) -> None:
         """Ensure terminal state is properly restored"""
         try:
             # Force disable mouse tracking and restore cursor
             import sys
-            sys.stdout.write('\033[?1000l\033[?1003l\033[?1015l\033[?1006l\033[?25h\033[?1004l')
+
+            sys.stdout.write(
+                "\033[?1000l\033[?1003l\033[?1015l\033[?1006l\033[?25h\033[?1004l"
+            )
             sys.stdout.flush()
         except Exception:
             pass

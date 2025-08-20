@@ -9,7 +9,6 @@ import aiohttp
 
 from ..utils.logging import log
 
-
 MOCK_TOURNAMENT_DATA = {
     "event_name": "Singles Tournament",
     "tournament_name": "Summer Showdown 2025",
@@ -260,14 +259,16 @@ class TournamentAPI:
         try:
             event_data = data["data"]["event"]
             event_name = event_data["name"]
-            tournament_name = event_data.get("tournament", {}).get("name", "Unknown Tournament")
+            tournament_name = event_data.get("tournament", {}).get(
+                "name", "Unknown Tournament"
+            )
             sets_data = event_data["sets"]["nodes"]
 
             parsed_sets = []
             total_sets = len(sets_data)
             skipped_tbd_count = 0
             log(f"🔍 Processing {total_sets} sets from API")
-            
+
             for set_data in sets_data:
                 # Extract player names from slots
                 player1_name = "TBD"
@@ -297,10 +298,10 @@ class TournamentAPI:
                 # Create bracket name from phase and round info
                 bracket_name = "Unknown Bracket"
                 pool_name = "Unknown Pool"
-                
+
                 if set_data.get("phaseGroup"):
                     phase_group = set_data["phaseGroup"]
-                    
+
                     # Get pool/group identifier and format it nicely
                     if phase_group.get("displayIdentifier"):
                         raw_identifier = phase_group["displayIdentifier"]
@@ -311,7 +312,7 @@ class TournamentAPI:
                             pool_name = f"Pool {raw_identifier.upper()}"
                         else:
                             pool_name = raw_identifier
-                    
+
                     # Get phase name for bracket
                     if phase_group.get("phase") and phase_group["phase"].get("name"):
                         phase_name = phase_group["phase"]["name"]
@@ -326,9 +327,9 @@ class TournamentAPI:
                     bracket_name += f" - Round {set_data['round']}"
 
                 # Skip matches where both players are TBD (not yet determined)
-                if player1_name == "TBD" and player2_name == "TBD":
+                if player1_name == "TBD" or player2_name == "TBD":
                     skipped_tbd_count += 1
-                    log(f"⏭️  Skipping TBD vs TBD match: {bracket_name}")
+                    log(f"⏭️  Skipping TBD match: {player1_name} vs {player2_name}")
                     continue
 
                 parsed_set = {
@@ -357,12 +358,14 @@ class TournamentAPI:
                 )
 
             result = {
-                "event_name": event_name, 
+                "event_name": event_name,
                 "tournament_name": tournament_name,
-                "sets": parsed_sets
+                "sets": parsed_sets,
             }
             log(f"✅ Successfully parsed {len(parsed_sets)} sets")
-            log(f"📊 Total sets from API: {total_sets}, Skipped TBD vs TBD: {skipped_tbd_count}, Included: {len(parsed_sets)}")
+            log(
+                f"📊 Total sets from API: {total_sets}, Skipped TBD vs TBD: {skipped_tbd_count}, Included: {len(parsed_sets)}"
+            )
             return result
 
         except Exception as e:
@@ -372,13 +375,13 @@ class TournamentAPI:
 
     async def get_event_id_from_slug(self, event_slug: str) -> Optional[str]:
         """Get event ID from event slug (e.g., 'tournament/the-c-stick-55/event/melee-singles')"""
-        
+
         # Auto-fix common slug format issues
         if not event_slug.startswith("tournament/"):
             log(f"🔧 Slug missing 'tournament/' prefix, fixing: {event_slug}")
             event_slug = f"tournament/{event_slug}"
             log(f"🔧 Fixed slug: {event_slug}")
-        
+
         log(f"🔍 Using event slug: {event_slug}")
         query = """
         query GetEvent($slug: String!) {
@@ -420,7 +423,9 @@ class TournamentAPI:
 
                     if not data.get("data") or not data["data"].get("event"):
                         log(f"❌ No event found for slug: {event_slug}")
-                        log("💡 Slug format should be: tournament/tournament-name/event/event-name")
+                        log(
+                            "💡 Slug format should be: tournament/tournament-name/event/event-name"
+                        )
                         log("💡 Example: tournament/evo-2023/event/street-fighter-6")
                         log("💡 Or try finding the correct slug from the start.gg URL")
                         return None

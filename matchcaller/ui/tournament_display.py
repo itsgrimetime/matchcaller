@@ -1,9 +1,8 @@
 """Main tournament display TUI application."""
 
 import time
-from collections.abc import Coroutine
 from datetime import datetime
-from typing import Any
+from typing import cast
 
 try:
     from textual import work
@@ -11,6 +10,7 @@ try:
     from textual.containers import Horizontal, ScrollableContainer, Vertical
     from textual.reactive import reactive
     from textual.widgets import DataTable, Footer, Header, Static
+    from textual.coordinate import Coordinate
 except ImportError:
     raise ImportError(
         "Missing required dependencies. Please install with: pip install textual aiohttp"
@@ -18,6 +18,7 @@ except ImportError:
 
 from ..api import TournamentAPI
 from ..models import MatchRow
+from ..models.match import TournamentData
 from ..utils.logging import log
 
 
@@ -178,7 +179,7 @@ class TournamentDisplay(App):
         from ..api.tournament_api import MOCK_TOURNAMENT_DATA
 
         log("🧪 Loading mock data for testing...")
-        data = MOCK_TOURNAMENT_DATA
+        data: TournamentData = MOCK_TOURNAMENT_DATA  # type: ignore
         self.event_name = data["event_name"]
         tournament_name = data.get("tournament_name", "Mock Tournament")
         self.title = f"{tournament_name} - {self.event_name}"  # Update the header title
@@ -201,7 +202,7 @@ class TournamentDisplay(App):
                 f"🔄 api.fetch_sets() returned: {type(data)} with keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}"
             )
 
-            self.event_name = data["event_name"]
+            self.event_name = cast(str, data["event_name"])
             tournament_name = data.get("tournament_name", "Unknown Tournament")
             self.title = (
                 f"{tournament_name} - {self.event_name}"  # Update the header title
@@ -209,7 +210,7 @@ class TournamentDisplay(App):
             log(f"🔄 Event name set to: {self.event_name}")
             log(f"🔄 Tournament title set to: {self.title}")
 
-            self.matches = [MatchRow(set_data) for set_data in data["sets"]]
+            self.matches = [MatchRow(set_data) for set_data in data["sets"]]  # type: ignore
             log(f"🔄 Created {len(self.matches)} match objects")
 
             self.total_sets = len(self.matches)
@@ -442,7 +443,7 @@ class TournamentDisplay(App):
 
                     # Update just the duration column (column 3) for each match
                     for i, match in enumerate(sorted_matches):
-                        pool_table.update_cell_at((i, 3), match.time_since_ready)
+                        pool_table.update_cell_at(Coordinate(i, 3), match.time_since_ready)
 
                 except Exception as e:
                     # If individual updates fail, fall back to full refresh every 10 seconds
@@ -478,7 +479,7 @@ class TournamentDisplay(App):
         except Exception:
             pass
 
-    def action_quit(self) -> Coroutine[Any, Any, None]:
+    async def action_quit(self):
         """Quit the application"""
         self._cleanup_terminal()
         self.exit()

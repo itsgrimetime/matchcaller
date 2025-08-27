@@ -1,7 +1,30 @@
 """Match data model and related utilities."""
 
 import time
-from typing import Dict
+from typing import Optional, TypedDict
+
+
+class PlayerData(TypedDict):
+    tag: str
+
+
+class SetData(TypedDict):
+    id: int
+    displayName: str
+    poolName: str
+    player1: Optional[PlayerData]
+    player2: Optional[PlayerData]
+    state: int
+    updatedAt: int
+    startedAt: Optional[int]
+    station: Optional[str]
+    stream: Optional[str]
+
+
+class TournamentData(TypedDict):
+    event_name: str
+    tournament_name: str
+    sets: list[SetData]
 
 
 class MatchRow:
@@ -23,7 +46,7 @@ class MatchRow:
         7: "Completed",
     }
 
-    def __init__(self, set_data: Dict):
+    def __init__(self, set_data: SetData):
         self.id = set_data["id"]
         self.bracket = set_data["displayName"]
         self.pool = set_data.get("poolName", "Unknown Pool")

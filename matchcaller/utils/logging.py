@@ -1,9 +1,6 @@
 """Logging utilities for the tournament display application."""
 
-import sys
 import logging
-from datetime import datetime
-
 
 # Set up file-only logging to avoid interfering with TUI
 logging.basicConfig(

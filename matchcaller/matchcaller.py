@@ -9,9 +9,10 @@ import logging
 import sys
 import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import aiohttp
+from textual.coordinate import Coordinate
 
 # Set up file logging
 logging.basicConfig(
@@ -618,8 +619,8 @@ class TournamentDisplay(App):
         """Load mock data to test the UI"""
         log("🧪 Loading mock data for testing...")
         data = MOCK_TOURNAMENT_DATA
-        self.event_name = data["event_name"]
-        self.matches = [MatchRow(set_data) for set_data in data["sets"]]
+        self.event_name = cast(str, data["event_name"])
+        self.matches = [MatchRow(cast(dict[str, Any], set_data)) for set_data in data["sets"]]
         self.total_sets = len(self.matches)
         self.ready_sets = sum(1 for m in self.matches if m.state == 2)
         self.in_progress_sets = sum(1 for m in self.matches if m.state == 6)
@@ -638,10 +639,10 @@ class TournamentDisplay(App):
                 f"🔄 api.fetch_sets() returned: {type(data)} with keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}"
             )
 
-            self.event_name = data["event_name"]
+            self.event_name = cast(str, data["event_name"])
             log(f"🔄 Event name set to: {self.event_name}")
 
-            self.matches = [MatchRow(set_data) for set_data in data["sets"]]
+            self.matches = [MatchRow(cast(dict[str, Any], set_data)) for set_data in data["sets"]]
             log(f"🔄 Created {len(self.matches)} match objects")
 
             self.total_sets = len(self.matches)
@@ -700,9 +701,6 @@ class TournamentDisplay(App):
 
         log(f"🔄 Adding {len(sorted_matches)} rows to table")
         for i, match in enumerate(sorted_matches):
-            # Highlight ready matches
-            style = "bold red" if match.state == 2 else None
-
             row_data = [
                 match.match_name,
                 match.bracket,
@@ -724,7 +722,7 @@ class TournamentDisplay(App):
         except Exception as e:
             # Only print this error occasionally to avoid spam
             if int(time.time()) % 10 == 0:  # Every 10 seconds
-                print(f"⚠️  Could not update info line: {e}")
+                log(f"⚠️  Could not update info line: {e}")
 
         # Update time calculations in the table (for ready matches)
         if not self.matches:
@@ -746,9 +744,9 @@ class TournamentDisplay(App):
                     match.state == 2 and match.started_at
                 ):  # Ready, In Progress, or Started matches - update time
                     try:
-                        table.update_cell_at((i, 3), match.time_since_ready)
-                    except:
-                        pass  # Handle any table update errors gracefully
+                        table.update_cell_at(Coordinate(i, 3), match.time_since_ready)
+                    except Exception as e:
+                        log(f"Failed to update cell at Coordinate({i}, 3)): {e}")
         except Exception as e:
             # Only print this error occasionally to avoid spam
             if int(time.time()) % 30 == 0:  # Every 30 seconds
@@ -760,7 +758,7 @@ class TournamentDisplay(App):
         self.fetch_tournament_data()
         self.notify("Refreshing tournament data...")
 
-    def action_quit(self) -> None:
+    async def action_quit(self) -> None:
         """Quit the application"""
         if self.refresh_timer:
             self.refresh_timer.cancel()

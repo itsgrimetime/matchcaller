@@ -52,6 +52,8 @@ except ImportError:
     sys.exit(0)
 
 # Mock data for testing (replace with real start.gg API calls)
+# Using fixed timestamps for consistent snapshot testing
+MOCK_BASE_TIME = 1640995200  # Fixed timestamp: Jan 1, 2022 00:00:00 UTC
 MOCK_TOURNAMENT_DATA = {
     "event_name": "Summer Showdown 2025",
     "sets": [
@@ -61,7 +63,7 @@ MOCK_TOURNAMENT_DATA = {
             "player1": {"tag": "Alice"},
             "player2": {"tag": "Bob"},
             "state": 2,  # Ready to be called
-            "updatedAt": int(time.time()) - 300,  # 5 minutes ago
+            "updatedAt": MOCK_BASE_TIME - 300,  # 5 minutes ago
         },
         {
             "id": 2,
@@ -69,7 +71,7 @@ MOCK_TOURNAMENT_DATA = {
             "player1": {"tag": "Charlie"},
             "player2": {"tag": "Dave"},
             "state": 6,  # In progress
-            "updatedAt": int(time.time()) - 120,  # 2 minutes ago
+            "updatedAt": MOCK_BASE_TIME - 120,  # 2 minutes ago
         },
         {
             "id": 3,
@@ -77,7 +79,7 @@ MOCK_TOURNAMENT_DATA = {
             "player1": {"tag": "Eve"},
             "player2": {"tag": "Frank"},
             "state": 1,  # Not started
-            "updatedAt": int(time.time()) - 60,
+            "updatedAt": MOCK_BASE_TIME - 60,
         },
         {
             "id": 4,
@@ -85,7 +87,7 @@ MOCK_TOURNAMENT_DATA = {
             "player1": {"tag": "Winner A"},
             "player2": {"tag": "Winner B"},
             "state": 1,  # Not started
-            "updatedAt": int(time.time()) - 30,
+            "updatedAt": MOCK_BASE_TIME - 30,
         },
     ],
 }

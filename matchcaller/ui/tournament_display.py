@@ -17,9 +17,9 @@ except ImportError:
     )
 
 from ..api import TournamentAPI
-from ..models import MatchRow
+from ..models import MatchRow, MatchState
 from ..models.match import TournamentData
-from ..utils.logging import log
+from ..utils.logging import log, set_console_logging
 
 
 class TournamentDisplay(App):
@@ -127,6 +127,9 @@ class TournamentDisplay(App):
 
     def on_mount(self) -> None:
         """Initialize the app"""
+        # Disable console logging when TUI starts
+        set_console_logging(False)
+        
         log("🏁 on_mount() called")
 
         # Show loading state
@@ -185,8 +188,8 @@ class TournamentDisplay(App):
         self.title = f"{tournament_name} - {self.event_name}"  # Update the header title
         self.matches = [MatchRow(set_data) for set_data in data["sets"]]
         self.total_sets = len(self.matches)
-        self.ready_sets = sum(1 for m in self.matches if m.state == 2)
-        self.in_progress_sets = sum(1 for m in self.matches if m.state == 6)
+        self.ready_sets = sum(1 for m in self.matches if m.state == MatchState.READY)
+        self.in_progress_sets = sum(1 for m in self.matches if m.state == MatchState.IN_PROGRESS)
         self.last_update = "Mock Data"
         self.update_table()
         log("✅ Mock data loaded successfully")
@@ -215,12 +218,12 @@ class TournamentDisplay(App):
 
             self.total_sets = len(self.matches)
             self.ready_sets = sum(
-                1 for m in self.matches if m.state == 2 and not m.started_at
+                1 for m in self.matches if m.state == MatchState.READY and not m.started_at
             )
             self.in_progress_sets = sum(
                 1
                 for m in self.matches
-                if (m.state == 6 or (m.state == 2 and m.started_at))
+                if (m.state == MatchState.IN_PROGRESS or (m.state == MatchState.READY and m.started_at))
             )
             self.last_update = datetime.now().strftime("%H:%M:%S")
 
@@ -328,8 +331,8 @@ class TournamentDisplay(App):
                         # Check if state 2 match has actually started
                         (
                             0
-                            if (m.state == 2 and m.started_at)
-                            else 1 if m.state == 2 else 2 if m.state == 6 else 3
+                            if (m.state == MatchState.READY and m.started_at)
+                            else 1 if m.state == MatchState.READY else 2 if m.state == MatchState.IN_PROGRESS else 3
                         ),  # Priority order
                         -m.updated_at,  # Most recent first within each priority
                     ),
@@ -375,8 +378,8 @@ class TournamentDisplay(App):
                     key=lambda m: (
                         (
                             0
-                            if (m.state == 2 and m.started_at)
-                            else 1 if m.state == 2 else 2 if m.state == 6 else 3
+                            if (m.state == MatchState.READY and m.started_at)
+                            else 1 if m.state == MatchState.READY else 2 if m.state == MatchState.IN_PROGRESS else 3
                         ),
                         -m.updated_at,
                     ),
@@ -430,8 +433,8 @@ class TournamentDisplay(App):
                     key=lambda m: (
                         (
                             0
-                            if (m.state == 2 and m.started_at)
-                            else 1 if m.state == 2 else 2 if m.state == 6 else 3
+                            if (m.state == MatchState.READY and m.started_at)
+                            else 1 if m.state == MatchState.READY else 2 if m.state == MatchState.IN_PROGRESS else 3
                         ),
                         -m.updated_at,
                     ),

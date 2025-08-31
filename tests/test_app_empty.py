@@ -12,6 +12,21 @@ class EmptyTournamentDisplay(TournamentDisplay):
     def __init__(self):
         super().__init__(api_token=None, event_id=None, event_slug=None)
         
+    def on_mount(self) -> None:
+        """Override to prevent time-based updates for stable snapshots"""
+        # Load empty data immediately without setting up periodic updates
+        self.show_loading_state()
+        self.load_mock_data()
+        
+    def fetch_tournament_data(self):
+        """Override to prevent time updates - just reload empty data (not async)"""
+        self.load_mock_data()
+        
+    def update_display(self) -> None:
+        """Override to prevent periodic time updates"""
+        # Do nothing - keep display stable
+        pass
+        
     def load_mock_data(self):
         """Load empty tournament data"""
         self.event_name = "Empty Tournament"
@@ -20,6 +35,7 @@ class EmptyTournamentDisplay(TournamentDisplay):
         self.ready_sets = 0
         self.in_progress_sets = 0
         self.last_update = "Empty Data"
+        self.title = "Empty Tournament - No Matches"
         self.update_table()
 
 if __name__ == "__main__":

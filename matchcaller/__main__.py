@@ -5,7 +5,6 @@ import asyncio
 import sys
 import time
 
-from .api.tournament_api import find_active_tournament
 from .ui import TournamentDisplay
 from .utils.logging import log
 
@@ -21,11 +20,6 @@ def main():
     )
     parser.add_argument("--demo", action="store_true", help="Run with demo data")
     parser.add_argument(
-        "--find-active",
-        action="store_true",
-        help="Automatically find a random active tournament with multiple pools",
-    )
-    parser.add_argument(
         "--simulate",
         help="Run with simulated data from cloned tournament file",
     )
@@ -37,7 +31,6 @@ def main():
     log(f"   Event: {args.event}")
     log(f"   Slug: {args.slug}")
     log(f"   Demo: {args.demo}")
-    log(f"   Find Active: {args.find_active}")
     log(f"   Simulate: {args.simulate}")
 
     # Debug the actual values being passed
@@ -48,29 +41,30 @@ def main():
     if args.simulate:
         log("🎮 Running in SIMULATION mode")
         log(f"📁 Loading tournament data from: {args.simulate}")
-        
+
         # Import simulator components
         from .utils.bracket_simulator import BracketSimulator, SimulatedTournamentAPI
-        
+
         # Create simulator
         simulator = BracketSimulator(args.simulate, speed_multiplier=60.0)
         if not simulator.load_tournament():
             log("❌ Failed to load tournament data")
             sys.exit(1)
-        
+
         log("✅ Tournament data loaded successfully")
         log("🎬 Simulation will start when TUI launches")
         log("   Press Ctrl+C to exit\n")
         time.sleep(1)
-        
+
         # Create and run app with simulation directly
         app = TournamentDisplay(api_token=None, event_id=None, event_slug=None)
         app.api = SimulatedTournamentAPI(simulator)
-        
+
         def cleanup_terminal():
             """Cleanup terminal state to prevent mouse tracking issues"""
             try:
                 import sys
+
                 sys.stdout.write(
                     "\033[?1000l\033[?1003l\033[?1015l\033[?1006l\033[?25h\033[?1004l"
                 )
@@ -89,9 +83,9 @@ def main():
             log(f"❌ Simulation crashed: {type(e).__name__}: {e}")
         finally:
             cleanup_terminal()
-        
+
         return  # Exit early for simulation mode
-        
+
     elif args.demo:
         log("🏆 Running in DEMO mode with mock data")
         log("   Use --token and (--event or --slug) for real data")
@@ -101,34 +95,9 @@ def main():
         token_to_use = None
         event_to_use = None
         slug_to_use = None
-    elif args.find_active:
-        if not args.token:
-            log("❌ --find-active requires --token to search for tournaments")
-            sys.exit(1)
-        log("🎯 Finding active tournament with multiple pools...")
-        log("   This may take a few seconds...")
-        time.sleep(1)
-
-        # Run the async function to find active tournament
-        try:
-            found_slug = asyncio.run(find_active_tournament(args.token))
-            if not found_slug:
-                log("❌ No suitable active tournaments found")
-                log("   Try running with --demo or specify a tournament manually")
-                sys.exit(1)
-
-            log(f"🌐 Using auto-found tournament: {found_slug}")
-            log("   Press Ctrl+C to exit\n")
-            token_to_use = args.token
-            event_to_use = None
-            slug_to_use = found_slug
-        except Exception as e:
-            log(f"❌ Error finding tournament: {e}")
-            sys.exit(1)
     elif not args.token or (not args.event and not args.slug):
         log("🏆 Running in DEMO mode with mock data")
         log("   Use --token and (--event or --slug) for real data")
-        log("   Or use --token --find-active to auto-find tournaments")
         log("   Press Ctrl+C to exit\n")
         time.sleep(2)
         # Force None values in demo mode

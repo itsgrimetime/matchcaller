@@ -1,8 +1,11 @@
 """Integration tests for data parsing and model functionality"""
 
 import time
+
 import pytest
-from matchcaller.matchcaller import MatchRow, MOCK_TOURNAMENT_DATA
+
+from matchcaller.matchcaller import MOCK_TOURNAMENT_DATA, MatchRow
+from matchcaller.models.match import MatchState, SetData
 
 
 @pytest.mark.integration
@@ -11,41 +14,50 @@ class TestMatchRow:
 
     def test_match_row_creation_from_valid_data(self):
         """Test creating MatchRow from valid set data"""
-        set_data = {
-            "id": 123,
-            "displayName": "Winners Bracket - Round 1", 
-            "player1": {"tag": "TestPlayer1"},
-            "player2": {"tag": "TestPlayer2"},
-            "state": 2,
-            "updatedAt": int(time.time()),
-            "startedAt": None,
-            "station": 5,
-            "stream": "stream1"
-        }
-        
+        set_data = SetData(
+            {
+                "id": 123,
+                "displayName": "Winners Bracket - Round 1",
+                "player1": {"tag": "TestPlayer1"},
+                "player2": {"tag": "TestPlayer2"},
+                "state": MatchState.READY,
+                "updatedAt": int(time.time()),
+                "startedAt": None,
+                "station": None,
+                "stream": "stream1",
+                "poolName": "Pool 1",
+            }
+        )
+
         match = MatchRow(set_data)
-        
+
         assert match.id == 123
         assert match.bracket == "Winners Bracket - Round 1"
         assert match.player1 == "TestPlayer1"
         assert match.player2 == "TestPlayer2"
-        assert match.state == 2
-        assert match.station == 5
+        assert match.state == MatchState.READY
+        assert match.station is None
         assert match.stream == "stream1"
 
     def test_match_row_with_missing_players(self):
         """Test MatchRow handles missing player data gracefully"""
-        set_data = {
-            "id": 123,
-            "displayName": "Winners Bracket - Round 1",
-            "player1": None,
-            "player2": None,
-            "state": 1,
-            "updatedAt": int(time.time()),
-        }
-        
+        set_data = SetData(
+            {
+                "id": 123,
+                "displayName": "Winners Bracket - Round 1",
+                "player1": None,
+                "player2": None,
+                "state": 1,
+                "updatedAt": int(time.time()),
+                "poolName": "Pool 2",
+                "startedAt": None,
+                "station": None,
+                "stream": None,
+            }
+        )
+
         match = MatchRow(set_data)
-        
+
         assert match.player1 == "TBD"
         assert match.player2 == "TBD"
 
@@ -59,9 +71,9 @@ class TestMatchRow:
             "state": 2,
             "updatedAt": int(time.time()),
         }
-        
+
         match = MatchRow(set_data)
-        
+
         assert match.match_name == "Alice vs Bob"
 
     def test_status_icon_ready_state(self):
@@ -73,27 +85,27 @@ class TestMatchRow:
             "player2": {"tag": "Bob"},
             "state": 2,
             "updatedAt": int(time.time()),
-            "startedAt": None
+            "startedAt": None,
         }
-        
+
         match = MatchRow(set_data)
-        
+
         assert match.status_icon == "[red]🔴[/red]"
 
     def test_status_icon_in_progress_state_2_with_started_at(self):
         """Test status icon for state 2 with startedAt (actually in progress)"""
         set_data = {
             "id": 123,
-            "displayName": "Test Bracket", 
+            "displayName": "Test Bracket",
             "player1": {"tag": "Alice"},
             "player2": {"tag": "Bob"},
             "state": 2,
             "updatedAt": int(time.time()),
-            "startedAt": int(time.time()) - 300  # Started 5 minutes ago
+            "startedAt": int(time.time()) - 300,  # Started 5 minutes ago
         }
-        
+
         match = MatchRow(set_data)
-        
+
         assert match.status_icon == "[yellow]🟡[/yellow]"
 
     def test_status_icon_in_progress_state_6(self):
@@ -101,14 +113,14 @@ class TestMatchRow:
         set_data = {
             "id": 123,
             "displayName": "Test Bracket",
-            "player1": {"tag": "Alice"}, 
+            "player1": {"tag": "Alice"},
             "player2": {"tag": "Bob"},
             "state": 6,
             "updatedAt": int(time.time()),
         }
-        
+
         match = MatchRow(set_data)
-        
+
         assert match.status_icon == "[yellow]🟡[/yellow]"
 
     def test_status_icon_waiting_state(self):
@@ -117,13 +129,13 @@ class TestMatchRow:
             "id": 123,
             "displayName": "Test Bracket",
             "player1": {"tag": "Alice"},
-            "player2": {"tag": "Bob"}, 
+            "player2": {"tag": "Bob"},
             "state": 1,
             "updatedAt": int(time.time()),
         }
-        
+
         match = MatchRow(set_data)
-        
+
         assert match.status_icon == "[dim]⚪[/dim]"
 
     def test_status_text_with_station(self):
@@ -135,11 +147,11 @@ class TestMatchRow:
             "player2": {"tag": "Bob"},
             "state": 2,
             "updatedAt": int(time.time()),
-            "station": 3
+            "station": 3,
         }
-        
+
         match = MatchRow(set_data)
-        
+
         assert "Station 3" in match.status_text
 
     def test_status_text_with_stream(self):
@@ -151,11 +163,11 @@ class TestMatchRow:
             "player2": {"tag": "Bob"},
             "state": 6,
             "updatedAt": int(time.time()),
-            "stream": "MainStream"
+            "stream": "MainStream",
         }
-        
+
         match = MatchRow(set_data)
-        
+
         assert "Stream: MainStream" in match.status_text
 
     def test_time_since_ready_recent(self):
@@ -169,9 +181,9 @@ class TestMatchRow:
             "state": 2,
             "updatedAt": now - 30,  # 30 seconds ago
         }
-        
+
         match = MatchRow(set_data)
-        
+
         assert match.time_since_ready == "30s"
 
     def test_time_since_ready_minutes(self):
@@ -185,9 +197,9 @@ class TestMatchRow:
             "state": 2,
             "updatedAt": now - 150,  # 2.5 minutes ago
         }
-        
+
         match = MatchRow(set_data)
-        
+
         result = match.time_since_ready
         assert result == "2m 30s"
 
@@ -201,11 +213,11 @@ class TestMatchRow:
             "player2": {"tag": "Bob"},
             "state": 6,
             "updatedAt": now - 300,
-            "startedAt": now - 180  # Started 3 minutes ago
+            "startedAt": now - 180,  # Started 3 minutes ago
         }
-        
+
         match = MatchRow(set_data)
-        
+
         assert match.time_since_ready == "3m"
 
     def test_time_since_ready_waiting_match_returns_dash(self):
@@ -218,9 +230,9 @@ class TestMatchRow:
             "state": 1,  # Waiting
             "updatedAt": int(time.time()),
         }
-        
+
         match = MatchRow(set_data)
-        
+
         # Waiting matches now show time since updated, not dash
         assert "s" in match.time_since_ready  # Should show seconds since updated
 
@@ -238,7 +250,14 @@ class TestMockData:
     def test_mock_sets_have_required_fields(self):
         """Test that all mock sets have required fields"""
         for set_data in MOCK_TOURNAMENT_DATA["sets"]:
-            required_fields = ["id", "displayName", "player1", "player2", "state", "updatedAt"]
+            required_fields = [
+                "id",
+                "displayName",
+                "player1",
+                "player2",
+                "state",
+                "updatedAt",
+            ]
             for field in required_fields:
                 assert field in set_data, f"Missing required field: {field}"
 
@@ -253,7 +272,7 @@ class TestMockData:
     def test_mock_data_has_variety_of_states(self):
         """Test that mock data includes different match states"""
         states = {set_data["state"] for set_data in MOCK_TOURNAMENT_DATA["sets"]}
-        
+
         # Should have at least ready (2) and in progress (6) states
         assert 2 in states, "Mock data should include ready matches"
         assert len(states) > 1, "Mock data should include variety of states"

@@ -13,6 +13,21 @@ class StableTournamentDisplay(TournamentDisplay):
     def __init__(self):
         super().__init__(api_token=None, event_id=None, event_slug=None)
         
+    def on_mount(self) -> None:
+        """Override to prevent time-based updates for stable snapshots"""
+        # Load stable mock data immediately without setting up periodic updates
+        self.show_loading_state()
+        self.load_mock_data()
+        
+    def fetch_tournament_data(self):
+        """Override to prevent time updates - just reload stable data (not async)"""
+        self.load_mock_data()
+        
+    def update_display(self) -> None:
+        """Override to prevent periodic time updates"""
+        # Do nothing - keep display stable
+        pass
+        
     def load_mock_data(self):
         """Load stable mock data with fixed time displays"""
         self.event_name = "Summer Showdown 2025"
@@ -65,6 +80,8 @@ class StableTournamentDisplay(TournamentDisplay):
         self.ready_sets = sum(1 for m in self.matches if m.state == 2)
         self.in_progress_sets = sum(1 for m in self.matches if m.state == 6)
         self.last_update = "10:30:00"  # Fixed time
+        # Set title after event name is set
+        self.title = f"Mock Tournament - {self.event_name}"
         self.update_table()
 
 class StableMatchRow(MatchRow):

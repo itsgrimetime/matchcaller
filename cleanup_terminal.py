@@ -9,11 +9,11 @@ def cleanup_terminal():
     # Disable various mouse tracking modes
     escape_sequences = [
         "\033[?1000l",  # Disable X11 mouse reporting
-        "\033[?1003l",  # Disable all mouse motion reporting
-        "\033[?1015l",  # Disable urxvt mouse mode
-        "\033[?1006l",  # Disable SGR mouse mode
-        "\033[?25h",  # Show cursor
-        "\033[?1004l",  # Disable focus reporting
+        # "\033[?1003l",  # Disable all mouse motion reporting
+        # "\033[?1015l",  # Disable urxvt mouse mode
+        # "\033[?1006l",  # Disable SGR mouse mode
+        # "\033[?25h",  # Show cursor
+        # "\033[?1004l",  # Disable focus reporting
     ]
 
     for seq in escape_sequences:

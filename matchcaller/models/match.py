@@ -1,80 +1,168 @@
 """Match data model and related utilities."""
 
 import time
-from typing import Optional, TypedDict
+from enum import IntEnum
+from typing import Dict, List, Optional, TypedDict, Union
 
 
+class MatchState(IntEnum):
+    """Match state enum based on start.gg API values"""
+
+    WAITING = 1  # Not started/Waiting for previous matches
+    READY = 2  # Ready to be called (or In Progress if startedAt is set)
+    COMPLETED = 3  # Completed
+    IN_PROGRESS = 6  # In progress
+    INVALID = 7  # Completed (alternative state)
+
+
+# Unified data models for both real tournament data and simulation data
 class PlayerData(TypedDict):
+    """Player information"""
     tag: str
+    id: Optional[int]
 
 
-class SetData(TypedDict):
+class EntrantSource(TypedDict):
+    """Source information for tournament entrants (used for bracket dependencies)"""
+    type: str
+    typeId: Optional[Union[str, int]]
+
+
+class MatchData(TypedDict):
+    """Complete match/set data structure that works for both API and simulation"""
+    # Core identifiers
     id: int
-    displayName: str
-    poolName: str
-    player1: Optional[PlayerData]
-    player2: Optional[PlayerData]
+    
+    # Display information
+    display_name: Optional[str]
+    displayName: Optional[str]
+    poolName: Optional[str]
+    phase_group: Optional[str]
+    phase_name: Optional[str]
+    
+    # Players
+    player1: PlayerData
+    player2: PlayerData
+    
+    # Match state
     state: int
-    updatedAt: int
+    
+    # Timestamps (both formats for compatibility)
+    created_at: Optional[int]
+    started_at: Optional[int]
+    completed_at: Optional[int]
+    updated_at: Optional[int]
+    updatedAt: Optional[int]
     startedAt: Optional[int]
+    
+    # Bracket dependencies (for simulation)
+    entrant1_source: Optional[EntrantSource]
+    entrant2_source: Optional[EntrantSource]
+    
+    # Station/stream information
     station: Optional[str]
     stream: Optional[str]
+    
+    # Simulation context
+    _simulation_context: Optional[Dict[str, int]]
+
+
+# Alias for backward compatibility
+SetData = MatchData
+
+
+class TournamentMetadata(TypedDict):
+    """Tournament metadata for simulation data"""
+    event_name: str
+    tournament_name: str
+    total_matches: int
 
 
 class TournamentData(TypedDict):
+    """Tournament data structure for simulation files"""
+    metadata: TournamentMetadata
+    matches: List[MatchData]
+    duration_minutes: int
+
+
+class TournamentState(TypedDict):
+    """Tournament state as returned by API or simulator"""
     event_name: str
     tournament_name: str
-    sets: list[SetData]
+    sets: List[MatchData]
+
+
+class TimelineEvent(TypedDict):
+    """Timeline event for simulation"""
+    timestamp: int
+    type: str
+    match_id: int
+    state: int
+    match: MatchData
+
+
+class SimulationProgress(TypedDict):
+    """Simulation progress information"""
+    progress: float
+    current_time: int
+    start_time: int
+    end_time: int
+    current_time_str: str
+    active_matches: int
 
 
 class MatchRow:
     """Represents a single match/set"""
 
     STATE_COLORS = {
-        1: "[dim]⚪[/dim]",  # Not started/Waiting - white
-        2: "[red]🔴[/red]",  # Ready to be called - red
-        3: "[green]✅[/green]",  # Completed - green
-        6: "[yellow]🟡[/yellow]",  # In progress - yellow
-        7: "[green]✅[/green]",  # Completed (alternative) - green
+        MatchState.WAITING: "[dim]⚪[/dim]",  # Not started/Waiting - white
+        MatchState.READY: "[red]🔴[/red]",  # Ready to be called - red
+        MatchState.COMPLETED: "[green]✅[/green]",  # Completed - green
+        MatchState.IN_PROGRESS: "[yellow]🟡[/yellow]",  # In progress - yellow
+        MatchState.INVALID: "[green]✅[/green]",  # Completed (alternative) - green
     }
 
     STATE_NAMES = {
-        1: "Waiting",
-        2: "Ready",
-        3: "Completed",
-        6: "In Progress",
-        7: "Completed",
+        MatchState.WAITING: "Waiting",
+        MatchState.READY: "Ready",
+        MatchState.COMPLETED: "Completed",
+        MatchState.IN_PROGRESS: "In Progress",
+        MatchState.INVALID: "Completed",
     }
 
-    def __init__(self, set_data: SetData):
+    def __init__(self, set_data: MatchData):
         self.id = set_data["id"]
-        self.bracket = set_data["displayName"]
+        self.bracket = set_data.get("displayName") or set_data.get("display_name", "Unknown Match")
         self.pool = set_data.get("poolName", "Unknown Pool")
-        self.player1 = set_data["player1"]["tag"] if set_data["player1"] else "TBD"
-        self.player2 = set_data["player2"]["tag"] if set_data["player2"] else "TBD"
+        self.player1 = set_data["player1"]["tag"] if set_data.get("player1") else "TBD"
+        self.player2 = set_data["player2"]["tag"] if set_data.get("player2") else "TBD"
         self.state = set_data["state"]
-        self.updated_at = set_data["updatedAt"]
-        self.started_at = set_data.get("startedAt")
+        # Try both timestamp formats for compatibility
+        self.updated_at = set_data.get("updatedAt") or set_data.get("updated_at", 0)
+        self.started_at = set_data.get("startedAt") or set_data.get("started_at")
         self.station = set_data.get("station")
         self.stream = set_data.get("stream")
+
+        # Store simulation context for normalized time calculations
+        self._simulation_context = set_data.get("_simulation_context")
 
     @property
     def status_icon(self) -> str:
         # Check if match has actually started based on startedAt timestamp
-        if self.state == 2 and self.started_at:
-            # State 2 but has startedAt - it's actually in progress
+        if self.state == MatchState.READY and self.started_at:
+            # State READY but has startedAt - it's actually in progress
             return "[yellow]🟡[/yellow]"
         else:
-            return self.STATE_COLORS.get(self.state, "⚪")
+            return self.STATE_COLORS.get(MatchState(self.state), "⚪")
 
     @property
     def status_text(self) -> str:
         # Check if match has actually started based on startedAt timestamp
-        if self.state == 2 and self.started_at:
-            # State 2 but has startedAt - it's actually in progress
+        if self.state == MatchState.READY and self.started_at:
+            # State READY but has startedAt - it's actually in progress
             status = "In Progress"
         else:
-            status = self.STATE_NAMES.get(self.state, "Unknown")
+            status = self.STATE_NAMES.get(MatchState(self.state), "Unknown")
 
         # Add station info if available
         if self.station:
@@ -91,48 +179,53 @@ class MatchRow:
     @property
     def time_since_ready(self) -> str:
         """Calculate time since match became ready, started, or was last updated"""
-        now = int(time.time())
+        # Use simulation time if available, otherwise use real time
+        if self._simulation_context:
+            now = self._simulation_context["current_time"]
+        else:
+            now = int(time.time())
 
-        if self.state == 2:  # Ready to be called or In Progress
+        if self.state == MatchState.READY:  # Ready to be called or In Progress
             # Use startedAt if available (match is actually in progress)
             # Otherwise use updatedAt (match is just ready)
             timestamp = self.started_at if self.started_at else self.updated_at
-            diff = now - timestamp
 
-            if diff < 60:
-                return f"{diff}s"
-            elif diff < 3600:
-                minutes = diff // 60
-                return f"{minutes}m {diff % 60}s"
+            if timestamp:
+                diff = now - timestamp
+
+                # Use clean duration format for both simulation and real modes
+                return self._format_duration(diff)
             else:
-                hours = diff // 3600
-                minutes = (diff % 3600) // 60
-                return f"{hours}h {minutes}m"
+                return "-"
 
-        elif self.state == 6 and self.started_at:  # In progress
+        elif self.state == MatchState.IN_PROGRESS and self.started_at:  # In progress
             diff = now - self.started_at
+            return self._format_duration(diff)
 
-            if diff < 60:
-                return f"{diff}s"
-            elif diff < 3600:
-                minutes = diff // 60
-                return f"{minutes}m"
+        elif self.state == MatchState.WAITING:  # Waiting - show time since last updated
+            if self.updated_at:
+                diff = now - self.updated_at
+                return self._format_duration(diff)
             else:
-                hours = diff // 3600
-                minutes = (diff % 3600) // 60
-                return f"{hours}h {minutes}m"
-
-        elif self.state == 1:  # Waiting - show time since last updated
-            diff = now - self.updated_at
-
-            if diff < 60:
-                return f"{diff}s"
-            elif diff < 3600:
-                minutes = diff // 60
-                return f"{minutes}m"
-            else:
-                hours = diff // 3600
-                minutes = (diff % 3600) // 60
-                return f"{hours}h {minutes}m"
+                return "-"
 
         return "-"
+
+    def _format_duration(self, diff: int, suffix: str = "") -> str:
+        """Format duration in seconds to human readable format"""
+        if diff < 60:
+            return f"{diff}s{suffix}"
+        elif diff < 3600:
+            minutes = diff // 60
+            seconds = diff % 60
+            if seconds > 0:
+                return f"{minutes}m {seconds}s{suffix}"
+            else:
+                return f"{minutes}m{suffix}"
+        else:
+            hours = diff // 3600
+            minutes = (diff % 3600) // 60
+            if minutes > 0:
+                return f"{hours}h {minutes}m{suffix}"
+            else:
+                return f"{hours}h{suffix}"

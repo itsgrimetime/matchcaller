@@ -393,11 +393,8 @@ class TestTournamentAPI:
         result = api.parse_api_response(mock_data)
         
         assert result["event_name"] == "Test Event"
-        assert len(result["sets"]) == 1
-        
-        parsed_set = result["sets"][0]
-        assert parsed_set["player1"]["tag"] == "TBD"
-        assert parsed_set["player2"]["tag"] == "TBD"
+        # Matches with TBD players are now filtered out by the API
+        assert len(result["sets"]) == 0
 
     def test_parse_api_response_invalid_data_returns_mock(self):
         """Test parsing invalid data returns mock data"""

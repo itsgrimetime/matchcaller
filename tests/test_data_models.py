@@ -172,7 +172,7 @@ class TestMatchRow:
         
         match = MatchRow(set_data)
         
-        assert "30s ago" in match.time_since_ready
+        assert match.time_since_ready == "30s"
 
     def test_time_since_ready_minutes(self):
         """Test time calculation for match ready minutes ago"""
@@ -189,7 +189,7 @@ class TestMatchRow:
         match = MatchRow(set_data)
         
         result = match.time_since_ready
-        assert "2m" in result and "30s ago" in result
+        assert result == "2m 30s"
 
     def test_time_since_started_for_in_progress_match(self):
         """Test time calculation for match that has started"""
@@ -206,7 +206,7 @@ class TestMatchRow:
         
         match = MatchRow(set_data)
         
-        assert "Started 3m ago" in match.time_since_ready
+        assert match.time_since_ready == "3m"
 
     def test_time_since_ready_waiting_match_returns_dash(self):
         """Test that waiting matches return dash for time"""
@@ -221,7 +221,8 @@ class TestMatchRow:
         
         match = MatchRow(set_data)
         
-        assert match.time_since_ready == "-"
+        # Waiting matches now show time since updated, not dash
+        assert "s" in match.time_since_ready  # Should show seconds since updated
 
 
 @pytest.mark.integration

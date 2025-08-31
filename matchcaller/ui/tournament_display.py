@@ -176,7 +176,7 @@ class TournamentDisplay(App):
 
     def load_mock_data(self) -> None:
         """Load mock data to test the UI"""
-        from ..api.tournament_api import MOCK_TOURNAMENT_DATA
+        from ..models.mock_data import MOCK_TOURNAMENT_DATA
 
         log("🧪 Loading mock data for testing...")
         data: TournamentData = MOCK_TOURNAMENT_DATA  # type: ignore

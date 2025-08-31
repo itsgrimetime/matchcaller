@@ -30,6 +30,8 @@ MOCK_TOURNAMENT_DATA: TournamentState = {
                 "startedAt": None,
                 "entrant1_source": None,
                 "entrant2_source": None,
+                "station": None,
+                "stream": None,
                 "_simulation_context": None,
             },
             {
@@ -50,6 +52,8 @@ MOCK_TOURNAMENT_DATA: TournamentState = {
                 "startedAt": MOCK_BASE_TIME - 120,
                 "entrant1_source": None,
                 "entrant2_source": None,
+                "station": None,
+                "stream": None,
                 "_simulation_context": None,
             },
             {
@@ -70,6 +74,8 @@ MOCK_TOURNAMENT_DATA: TournamentState = {
                 "startedAt": None,
                 "entrant1_source": None,
                 "entrant2_source": None,
+                "station": None,
+                "stream": None,
                 "_simulation_context": None,
             },
             {
@@ -90,6 +96,8 @@ MOCK_TOURNAMENT_DATA: TournamentState = {
                 "startedAt": None,
                 "entrant1_source": None,
                 "entrant2_source": None,
+                "station": None,
+                "stream": None,
                 "_simulation_context": None,
             },
         ],

@@ -3,12 +3,11 @@
 import asyncio
 import json
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 
-from ..models.match import TournamentState
-
+from ..models.match import MatchData, TournamentState
 from ..models.mock_data import MOCK_TOURNAMENT_DATA
 from ..utils.logging import log
 
@@ -27,7 +26,7 @@ class TournamentAPI:
         self.event_slug = event_slug  # New: accept event slug
         self.base_url = "https://api.start.gg/gql/alpha"
 
-    async def fetch_sets(self) -> Dict[str, Any]:
+    async def fetch_sets(self) -> TournamentState:
         """Fetch tournament sets from start.gg API"""
         log(
             f"🔍 API Token: {'***' + self.api_token[-4:] if self.api_token else 'None'}"
@@ -198,7 +197,7 @@ class TournamentAPI:
             )
             sets_data = event_data["sets"]["nodes"]
 
-            parsed_sets = []
+            parsed_sets: List[MatchData] = []
             total_sets = len(sets_data)
             skipped_tbd_count = 0
             log(f"🔍 Processing {total_sets} sets from API")
@@ -266,15 +265,24 @@ class TournamentAPI:
                     log(f"⏭️  Skipping TBD match: {player1_name} vs {player2_name}")
                     continue
 
-                parsed_set = {
+                parsed_set: MatchData = {
                     "id": set_data["id"],
+                    "display_name": bracket_name,
                     "displayName": bracket_name,
                     "poolName": pool_name,
-                    "player1": {"tag": player1_name},
-                    "player2": {"tag": player2_name},
+                    "phase_group": pool_name,
+                    "phase_name": pool_name,
+                    "player1": {"tag": player1_name, "id": None},
+                    "player2": {"tag": player2_name, "id": None},
                     "state": set_data["state"],
+                    "created_at": None,
+                    "started_at": set_data.get("startedAt"),
+                    "completed_at": None,
+                    "updated_at": set_data["updatedAt"] or int(time.time()),
                     "updatedAt": set_data["updatedAt"] or int(time.time()),
                     "startedAt": set_data.get("startedAt"),
+                    "entrant1_source": None,
+                    "entrant2_source": None,
                     "station": (
                         set_data.get("station", {}).get("number")
                         if set_data.get("station")
@@ -285,13 +293,14 @@ class TournamentAPI:
                         if set_data.get("stream")
                         else None
                     ),
+                    "_simulation_context": None,
                 }
                 parsed_sets.append(parsed_set)
                 log(
                     f"📋 Parsed set: {player1_name} vs {player2_name} ({bracket_name}) - State: {set_data['state']}"
                 )
 
-            result = {
+            result: TournamentState = {
                 "event_name": event_name,
                 "tournament_name": tournament_name,
                 "sets": parsed_sets,

@@ -6,8 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
-from api.tournament_api import TournamentAPI
-
+from ..api.tournament_api import TournamentAPI
 from ..models.match import (
     MatchData,
     MatchState,
@@ -447,7 +446,7 @@ class SimulatedTournamentAPI(TournamentAPI):
     event_name: Optional[str]
     event_slug: Optional[str]
     api_token: Optional[str]
-    event_id: Optional[int]
+    event_id: Optional[str]
 
     def __init__(self, simulator: BracketSimulator) -> None:
         self.simulator = simulator
@@ -463,7 +462,7 @@ class SimulatedTournamentAPI(TournamentAPI):
             if simulator.timeline_events:
                 simulator.current_time = simulator.start_time
 
-    async def fetch_sets(self) -> Dict[str, Any]:
+    async def fetch_sets(self) -> TournamentState:
         """Return current simulated tournament state with gradual time progression"""
         if not self.simulator.tournament_data:
             log("❌ No tournament data in simulator")
@@ -520,9 +519,15 @@ class SimulatedTournamentAPI(TournamentAPI):
 
         return current_state
 
-    def parse_api_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def parse_api_response(self, data: Dict[str, Any]) -> TournamentState:
         """Pass through - simulator already returns in correct format"""
-        return data
+        # The simulator already returns data in TournamentState format
+        # This is a type-safe way to convert Dict[str, Any] to TournamentState
+        return {
+            "event_name": data.get("event_name", ""),
+            "tournament_name": data.get("tournament_name", ""),
+            "sets": data.get("sets", []),
+        }
 
     async def get_event_id_from_slug(self, event_slug: str) -> Optional[str]:
         """Simulate event ID resolution"""

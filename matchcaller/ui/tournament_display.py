@@ -2,7 +2,7 @@
 
 import time
 from datetime import datetime
-from typing import cast
+from typing import Optional, cast
 
 try:
     from textual import work
@@ -106,9 +106,9 @@ class TournamentDisplay(App):
 
     def __init__(
         self,
-        api_token: str | None = None,
-        event_id: str | None = None,
-        event_slug: str | None = None,
+        api_token: Optional[str] = None,
+        event_id: Optional[str] = None,
+        event_slug: Optional[str] = None,
     ):
         super().__init__()
         self.api: TournamentAPI = TournamentAPI(api_token, event_id, event_slug)
@@ -182,7 +182,7 @@ class TournamentDisplay(App):
         from ..models.mock_data import MOCK_TOURNAMENT_DATA
 
         log("🧪 Loading mock data for testing...")
-        data: TournamentData = MOCK_TOURNAMENT_DATA  # type: ignore
+        data = MOCK_TOURNAMENT_DATA
         self.event_name = data["event_name"]
         tournament_name = data.get("tournament_name", "Mock Tournament")
         self.title = f"{tournament_name} - {self.event_name}"  # Update the header title
@@ -280,7 +280,7 @@ class TournamentDisplay(App):
         existing_pools = {
             section.id for section in pools_container.query(".pool-section")
         }
-        new_pools = {f"pool-{pool.lower().replace(' ', '-')}" for pool in pools.keys()}
+        new_pools = {f"pool-{(pool or 'unknown').lower().replace(' ', '-')}" for pool in pools.keys()}
 
         # Always rebuild if there's a loading message present
         has_loading_message = bool(pools_container.query("#loading-message"))
@@ -294,7 +294,7 @@ class TournamentDisplay(App):
             log("🔄 Pool structure unchanged, updating existing tables")
 
         # Sort pools by name for consistent ordering
-        sorted_pools = sorted(pools.keys())
+        sorted_pools = sorted(key for key in pools.keys() if key is not None)
 
         # Calculate number of columns based on number of pools
         num_pools = len(sorted_pools)
@@ -322,7 +322,7 @@ class TournamentDisplay(App):
                 column_index = i % num_columns
                 column = columns[column_index]
                 pool_matches = pools[pool_name]
-                pool_id = f"pool-{pool_name.lower().replace(' ', '-')}"
+                pool_id = f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
 
                 # Sort matches within each pool: In Progress first, then Ready, then Waiting
                 sorted_matches = sorted(
@@ -334,12 +334,12 @@ class TournamentDisplay(App):
                             if (m.state == MatchState.READY and m.started_at)
                             else 1 if m.state == MatchState.READY else 2 if m.state == MatchState.IN_PROGRESS else 3
                         ),  # Priority order
-                        -m.updated_at,  # Most recent first within each priority
+                        -(m.updated_at or 0),  # Most recent first within each priority
                     ),
                 )
 
                 # Create a new DataTable for this pool
-                pool_table = DataTable(classes="pool-table")
+                pool_table: DataTable = DataTable(classes="pool-table")
                 pool_table.add_column("Match", width=28)
                 pool_table.add_column("Status", width=10)
                 pool_table.add_column("Duration", width=10)
@@ -356,7 +356,7 @@ class TournamentDisplay(App):
 
                 # Create pool section with title and table
                 pool_section = Vertical(
-                    Static(pool_name, classes="pool-title"),
+                    Static(pool_name or "Unknown Pool", classes="pool-title"),
                     pool_table,
                     classes="pool-section",
                     id=pool_id,
@@ -370,7 +370,7 @@ class TournamentDisplay(App):
             # Update existing pool tables
             for pool_name in sorted_pools:
                 pool_matches = pools[pool_name]
-                pool_id = f"pool-{pool_name.lower().replace(' ', '-')}"
+                pool_id = f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
 
                 # Sort matches within each pool
                 sorted_matches = sorted(
@@ -381,12 +381,12 @@ class TournamentDisplay(App):
                             if (m.state == MatchState.READY and m.started_at)
                             else 1 if m.state == MatchState.READY else 2 if m.state == MatchState.IN_PROGRESS else 3
                         ),
-                        -m.updated_at,
+                        -(m.updated_at or 0),
                     ),
                 )
 
                 try:
-                    pool_section = pools_container.query_one(f"#{pool_id}")
+                    pool_section = cast(Vertical, pools_container.query_one(f"#{pool_id}"))
                     pool_table = pool_section.query_one(DataTable)
                     pool_table.clear()
 
@@ -423,9 +423,9 @@ class TournamentDisplay(App):
             for match in self.matches:
                 pools[match.pool].append(match)
 
-            for pool_name in sorted(pools.keys()):
+            for pool_name in sorted(key for key in pools.keys() if key is not None):
                 pool_matches = pools[pool_name]
-                pool_id = f"pool-{pool_name.lower().replace(' ', '-')}"
+                pool_id = f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
 
                 # Sort matches same as update_table
                 sorted_matches = sorted(
@@ -436,7 +436,7 @@ class TournamentDisplay(App):
                             if (m.state == MatchState.READY and m.started_at)
                             else 1 if m.state == MatchState.READY else 2 if m.state == MatchState.IN_PROGRESS else 3
                         ),
-                        -m.updated_at,
+                        -(m.updated_at or 0),
                     ),
                 )
 

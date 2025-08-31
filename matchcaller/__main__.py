@@ -1,7 +1,6 @@
 """Main entry point for the tournament display application."""
 
 import argparse
-import asyncio
 import sys
 import time
 

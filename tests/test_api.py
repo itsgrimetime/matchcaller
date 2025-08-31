@@ -4,6 +4,7 @@ import pytest
 from aioresponses import aioresponses
 
 from matchcaller.matchcaller import MOCK_TOURNAMENT_DATA, TournamentAPI
+from matchcaller.models.match import TournamentState
 
 
 @pytest.mark.unit
@@ -215,7 +216,7 @@ class TestTournamentAPI:
 
             assert result == MOCK_TOURNAMENT_DATA
 
-    def test_parse_api_response_valid_data(self):
+    def test_parse_api_response_valid_data(self) -> None:
         """Test parsing valid API response"""
         api = TournamentAPI()
 
@@ -269,7 +270,7 @@ class TestTournamentAPI:
             }
         }
 
-        result = api.parse_api_response(mock_data)
+        result: TournamentState = api.parse_api_response(mock_data)
 
         assert result["event_name"] == "Test Event"
         assert len(result["sets"]) == 1
@@ -281,7 +282,7 @@ class TestTournamentAPI:
         assert parsed_set["state"] == 2
         assert parsed_set["station"] == 5
         assert parsed_set["stream"] is None
-        assert "Winner's Bracket - Winners Round 1" in parsed_set["displayName"]
+        assert "Winner's Bracket - Winners Round 1" in (parsed_set["displayName"] or "")
 
     def test_parse_api_response_missing_players(self):
         """Test parsing response with missing player data"""

@@ -83,7 +83,7 @@ def run_tests(args):
     if args.coverage:
         cmd.extend(
             [
-                "--cov=matchcaller.matchcaller",
+                "--cov=matchcaller",
                 "--cov-report=html",
                 "--cov-report=term",
                 "--cov-report=xml",

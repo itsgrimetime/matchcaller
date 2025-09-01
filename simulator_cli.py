@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import sys
 import time
+from typing import Dict
 
 from matchcaller.ui import TournamentDisplay
 from matchcaller.utils.bracket_simulator import BracketSimulator, SimulatedTournamentAPI
@@ -15,7 +16,7 @@ from matchcaller.utils.logging import log
 from matchcaller.utils.tournament_cloner import TournamentCloner
 
 
-async def clone_tournament(args):
+async def clone_tournament(args) -> int:
     """Clone a tournament from start.gg"""
     if not args.token:
         log("❌ API token required for cloning. Use --token YOUR_TOKEN")
@@ -42,7 +43,7 @@ async def clone_tournament(args):
         return 1
 
 
-def list_tournaments(args):
+def list_tournaments(args) -> int:
     """List all cloned tournaments"""
     cloner = TournamentCloner("")  # No token needed for listing
     tournaments = cloner.list_cloned_tournaments()
@@ -73,14 +74,14 @@ def list_tournaments(args):
     return 0
 
 
-def simulate_tournament(args):
+def simulate_tournament(args) -> int:
     """Run a tournament simulation"""
     simulator = BracketSimulator(args.file, args.speed)
 
     if not simulator.load_tournament():
         return 1
 
-    log(f"🎮 Simulation Controls:")
+    log("🎮 Simulation Controls:")
     log("   Ctrl+C: Stop simulation")
     log("   The TUI will show live data from the simulation")
     log("")
@@ -95,7 +96,9 @@ def simulate_tournament(args):
         sim_api = SimulatedTournamentAPI(simulator)
 
         # Create TUI that uses simulated data
-        app = TournamentDisplay(api_token=None, event_id=None, event_slug=None)
+        app = TournamentDisplay(
+            api_token=None, event_id=None, event_slug=None, poll_interval=1.0
+        )
         app.api = sim_api
 
         # Run the TUI
@@ -128,7 +131,7 @@ def simulate_tournament(args):
     return 0
 
 
-def analyze_tournament(args):
+def analyze_tournament(args) -> int:
     """Analyze a cloned tournament file"""
     simulator = BracketSimulator(args.file)
 
@@ -136,13 +139,14 @@ def analyze_tournament(args):
         return 1
 
     data = simulator.tournament_data
+    if data is None:
+        return 1
     metadata = data["metadata"]
 
-    print(f"📊 Tournament Analysis")
+    print("📊 Tournament Analysis")
     print("=" * 50)
     print(f"Event: {metadata['event_name']}")
     print(f"Tournament: {metadata['tournament_name']}")
-    print(f"Slug: {metadata['event_slug']}")
     print(f"Total Matches: {metadata['total_matches']}")
     print(
         f"Duration: {data['duration_minutes']} minutes ({data['duration_minutes']/60:.1f} hours)"
@@ -150,18 +154,20 @@ def analyze_tournament(args):
     print("")
 
     # Analyze match states
-    state_counts = {}
-    phase_counts = {}
+    state_counts: Dict[int, int] = {}
+    phase_counts: Dict[str, int] = {}
 
     for match in data["matches"]:
         state = match["state"]
         state_counts[state] = state_counts.get(state, 0) + 1
 
         phase = match["phase_name"]
+        if phase is None:
+            phase = "Unknown"
         phase_counts[phase] = phase_counts.get(phase, 0) + 1
 
     print("Match States:")
-    state_names = {
+    state_names: Dict[int, str] = {
         1: "Created/Waiting",
         2: "Ready/In Progress",
         3: "Completed",
@@ -225,7 +231,7 @@ Examples:
     )
 
     # List command
-    list_parser = subparsers.add_parser("list", help="List cloned tournaments")
+    subparsers.add_parser("list", help="List cloned tournaments")
 
     # Simulate command
     simulate_parser = subparsers.add_parser(
@@ -235,7 +241,7 @@ Examples:
     simulate_parser.add_argument(
         "--speed",
         type=float,
-        default=60.0,
+        default=1.0,
         help="Simulation speed multiplier (default: 60x)",
     )
     simulate_parser.add_argument(

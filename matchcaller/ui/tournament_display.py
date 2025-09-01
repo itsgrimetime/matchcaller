@@ -8,9 +8,9 @@ try:
     from textual import work
     from textual.app import App, ComposeResult
     from textual.containers import Horizontal, ScrollableContainer, Vertical
+    from textual.coordinate import Coordinate
     from textual.reactive import reactive
     from textual.widgets import DataTable, Footer, Header, Static
-    from textual.coordinate import Coordinate
 except ImportError:
     raise ImportError(
         "Missing required dependencies. Please install with: pip install textual aiohttp"
@@ -18,7 +18,6 @@ except ImportError:
 
 from ..api import TournamentAPI
 from ..models import MatchRow, MatchState
-from ..models.match import TournamentData
 from ..utils.logging import log, set_console_logging
 
 
@@ -109,14 +108,18 @@ class TournamentDisplay(App):
         api_token: Optional[str] = None,
         event_id: Optional[str] = None,
         event_slug: Optional[str] = None,
+        poll_interval: float = 30.0,
     ):
         super().__init__()
         self.api: TournamentAPI = TournamentAPI(api_token, event_id, event_slug)
         self.matches: list[MatchRow] = []
         # Set initial title - will be updated when tournament data is loaded
         self.title = "Loading Tournament..."
+        self.poll_interval = poll_interval
         log(
-            f"🎯 TournamentDisplay initialized with token: {'***' + api_token[-4:] if api_token else 'None'}, event: {event_id}, slug: {event_slug}"
+            "🎯 TournamentDisplay initialized with token: "
+            f"{'***' + api_token[-4:] if api_token else 'None'}, "
+            f"event: {event_id}, slug: {event_slug}, poll_interval: {poll_interval}"
         )
 
     def compose(self) -> ComposeResult:
@@ -129,7 +132,7 @@ class TournamentDisplay(App):
         """Initialize the app"""
         # Disable console logging when TUI starts
         set_console_logging(False)
-        
+
         log("🏁 on_mount() called")
 
         # Show loading state
@@ -139,7 +142,7 @@ class TournamentDisplay(App):
         # Start periodic updates
         self.set_interval(1.0, self.update_display)  # Update every second
         self.set_interval(
-            30.0, self.fetch_tournament_data
+            self.poll_interval, self.fetch_tournament_data
         )  # Fetch fresh data every 30 seconds
 
         log("🚀 Starting initial data fetch...")
@@ -189,7 +192,9 @@ class TournamentDisplay(App):
         self.matches = [MatchRow(set_data) for set_data in data["sets"]]
         self.total_sets = len(self.matches)
         self.ready_sets = sum(1 for m in self.matches if m.state == MatchState.READY)
-        self.in_progress_sets = sum(1 for m in self.matches if m.state == MatchState.IN_PROGRESS)
+        self.in_progress_sets = sum(
+            1 for m in self.matches if m.state == MatchState.IN_PROGRESS
+        )
         self.last_update = "Mock Data"
         self.update_table()
         log("✅ Mock data loaded successfully")
@@ -202,7 +207,9 @@ class TournamentDisplay(App):
             log("🔄 About to call api.fetch_sets()...")
             data = await self.api.fetch_sets()
             log(
-                f"🔄 api.fetch_sets() returned: {type(data)} with keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}"
+                "🔄 api.fetch_sets() returned: "
+                f"{type(data)} with keys: "
+                f"{list(data.keys()) if isinstance(data, dict) else 'not a dict'}"
             )
 
             self.event_name = cast(str, data["event_name"])
@@ -213,17 +220,22 @@ class TournamentDisplay(App):
             log(f"🔄 Event name set to: {self.event_name}")
             log(f"🔄 Tournament title set to: {self.title}")
 
-            self.matches = [MatchRow(set_data) for set_data in data["sets"]]  # type: ignore
+            self.matches = [MatchRow(set_data) for set_data in data["sets"]]
             log(f"🔄 Created {len(self.matches)} match objects")
 
             self.total_sets = len(self.matches)
             self.ready_sets = sum(
-                1 for m in self.matches if m.state == MatchState.READY and not m.started_at
+                1
+                for m in self.matches
+                if m.state == MatchState.READY and not m.started_at
             )
             self.in_progress_sets = sum(
                 1
                 for m in self.matches
-                if (m.state == MatchState.IN_PROGRESS or (m.state == MatchState.READY and m.started_at))
+                if (
+                    m.state == MatchState.IN_PROGRESS
+                    or (m.state == MatchState.READY and m.started_at)
+                )
             )
             self.last_update = datetime.now().strftime("%H:%M:%S")
 
@@ -280,7 +292,10 @@ class TournamentDisplay(App):
         existing_pools = {
             section.id for section in pools_container.query(".pool-section")
         }
-        new_pools = {f"pool-{(pool or 'unknown').lower().replace(' ', '-')}" for pool in pools.keys()}
+        new_pools = {
+            f"pool-{(pool or 'unknown').lower().replace(' ', '-')}"
+            for pool in pools.keys()
+        }
 
         # Always rebuild if there's a loading message present
         has_loading_message = bool(pools_container.query("#loading-message"))
@@ -332,7 +347,11 @@ class TournamentDisplay(App):
                         (
                             0
                             if (m.state == MatchState.READY and m.started_at)
-                            else 1 if m.state == MatchState.READY else 2 if m.state == MatchState.IN_PROGRESS else 3
+                            else (
+                                1
+                                if m.state == MatchState.READY
+                                else 2 if m.state == MatchState.IN_PROGRESS else 3
+                            )
                         ),  # Priority order
                         -(m.updated_at or 0),  # Most recent first within each priority
                     ),
@@ -341,8 +360,8 @@ class TournamentDisplay(App):
                 # Create a new DataTable for this pool
                 pool_table: DataTable = DataTable(classes="pool-table")
                 pool_table.add_column("Match", width=28)
-                pool_table.add_column("Status", width=10)
-                pool_table.add_column("Duration", width=10)
+                pool_table.add_column("Status", width=15)
+                pool_table.add_column("Duration", width=8)
                 pool_table.cursor_type = "row"
 
                 # Add matches to the pool table
@@ -379,14 +398,20 @@ class TournamentDisplay(App):
                         (
                             0
                             if (m.state == MatchState.READY and m.started_at)
-                            else 1 if m.state == MatchState.READY else 2 if m.state == MatchState.IN_PROGRESS else 3
+                            else (
+                                1
+                                if m.state == MatchState.READY
+                                else 2 if m.state == MatchState.IN_PROGRESS else 3
+                            )
                         ),
                         -(m.updated_at or 0),
                     ),
                 )
 
                 try:
-                    pool_section = cast(Vertical, pools_container.query_one(f"#{pool_id}"))
+                    pool_section = cast(
+                        Vertical, pools_container.query_one(f"#{pool_id}")
+                    )
                     pool_table = pool_section.query_one(DataTable)
                     pool_table.clear()
 
@@ -434,7 +459,11 @@ class TournamentDisplay(App):
                         (
                             0
                             if (m.state == MatchState.READY and m.started_at)
-                            else 1 if m.state == MatchState.READY else 2 if m.state == MatchState.IN_PROGRESS else 3
+                            else (
+                                1
+                                if m.state == MatchState.READY
+                                else 2 if m.state == MatchState.IN_PROGRESS else 3
+                            )
                         ),
                         -(m.updated_at or 0),
                     ),
@@ -446,9 +475,12 @@ class TournamentDisplay(App):
 
                     # Update just the duration column (column 3) for each match
                     for i, match in enumerate(sorted_matches):
-                        pool_table.update_cell_at(Coordinate(i, 3), match.time_since_ready)
+                        pool_table.update_cell_at(
+                            Coordinate(i, 2), match.time_since_ready
+                        )
 
                 except Exception as e:
+                    log(f"⚠️ Failed to query pool: {e}")
                     # If individual updates fail, fall back to full refresh every 10 seconds
                     if int(time.time()) % 10 == 0:
                         self.update_table()

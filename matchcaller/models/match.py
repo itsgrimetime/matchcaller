@@ -18,35 +18,38 @@ class MatchState(IntEnum):
 # Unified data models for both real tournament data and simulation data
 class PlayerData(TypedDict):
     """Player information"""
+
     tag: str
     id: Optional[int]
 
 
 class EntrantSource(TypedDict):
     """Source information for tournament entrants (used for bracket dependencies)"""
+
     type: str
     typeId: Optional[Union[str, int]]
 
 
 class MatchData(TypedDict):
     """Complete match/set data structure that works for both API and simulation"""
+
     # Core identifiers
     id: int
-    
+
     # Display information
     display_name: Optional[str]
     displayName: Optional[str]
     poolName: Optional[str]
     phase_group: Optional[str]
     phase_name: Optional[str]
-    
+
     # Players
     player1: PlayerData
     player2: PlayerData
-    
+
     # Match state
     state: int
-    
+
     # Timestamps (both formats for compatibility)
     created_at: Optional[int]
     started_at: Optional[int]
@@ -54,15 +57,15 @@ class MatchData(TypedDict):
     updated_at: Optional[int]
     updatedAt: Optional[int]
     startedAt: Optional[int]
-    
+
     # Bracket dependencies (for simulation)
     entrant1_source: Optional[EntrantSource]
     entrant2_source: Optional[EntrantSource]
-    
+
     # Station/stream information
     station: Optional[str]
     stream: Optional[str]
-    
+
     # Simulation context
     _simulation_context: Optional[Dict[str, int]]
 
@@ -73,6 +76,7 @@ SetData = MatchData
 
 class TournamentMetadata(TypedDict):
     """Tournament metadata for simulation data"""
+
     event_name: str
     tournament_name: str
     total_matches: int
@@ -80,6 +84,7 @@ class TournamentMetadata(TypedDict):
 
 class TournamentData(TypedDict):
     """Tournament data structure for simulation files"""
+
     metadata: TournamentMetadata
     matches: List[MatchData]
     duration_minutes: int
@@ -87,6 +92,7 @@ class TournamentData(TypedDict):
 
 class TournamentState(TypedDict):
     """Tournament state as returned by API or simulator"""
+
     event_name: str
     tournament_name: str
     sets: List[MatchData]
@@ -94,6 +100,7 @@ class TournamentState(TypedDict):
 
 class TimelineEvent(TypedDict):
     """Timeline event for simulation"""
+
     timestamp: int
     type: str
     match_id: int
@@ -103,6 +110,7 @@ class TimelineEvent(TypedDict):
 
 class SimulationProgress(TypedDict):
     """Simulation progress information"""
+
     progress: float
     current_time: int
     start_time: int
@@ -132,7 +140,9 @@ class MatchRow:
 
     def __init__(self, set_data: MatchData):
         self.id = set_data["id"]
-        self.bracket = set_data.get("displayName") or set_data.get("display_name", "Unknown Match")
+        self.bracket = set_data.get("displayName") or set_data.get(
+            "display_name", "Unknown Match"
+        )
         self.pool = set_data.get("poolName", "Unknown Pool")
         self.player1 = set_data["player1"]["tag"] if set_data.get("player1") else "TBD"
         self.player2 = set_data["player2"]["tag"] if set_data.get("player2") else "TBD"
@@ -180,10 +190,12 @@ class MatchRow:
     def time_since_ready(self) -> str:
         """Calculate time since match became ready, started, or was last updated"""
         # Use simulation time if available, otherwise use real time
-        if self._simulation_context:
+        if self._simulation_context and self._simulation_context.get("is_simulation"):
             now = self._simulation_context["current_time"]
+            start_time = self._simulation_context["start_time"]
         else:
             now = int(time.time())
+            start_time = None
 
         if self.state == MatchState.READY:  # Ready to be called or In Progress
             # Use startedAt if available (match is actually in progress)
@@ -191,21 +203,53 @@ class MatchRow:
             timestamp = self.started_at if self.started_at else self.updated_at
 
             if timestamp:
-                diff = now - timestamp
+                if start_time:
+                    # For simulation: calculate relative time from tournament start
+                    # Original timestamp relative to tournament start
+                    original_offset = timestamp - start_time
+                    # Apply to current simulation timeline
+                    sim_timestamp = start_time + original_offset
+                    diff = now - sim_timestamp
+                else:
+                    # For real tournaments
+                    diff = now - timestamp
 
-                # Use clean duration format for both simulation and real modes
-                return self._format_duration(diff)
+                # Only show positive durations
+                if diff >= 0:
+                    return self._format_duration(diff)
+                else:
+                    return "-"
             else:
                 return "-"
 
         elif self.state == MatchState.IN_PROGRESS and self.started_at:  # In progress
-            diff = now - self.started_at
-            return self._format_duration(diff)
+            if start_time:
+                # For simulation: calculate relative time
+                original_offset = self.started_at - start_time
+                sim_timestamp = start_time + original_offset
+                diff = now - sim_timestamp
+            else:
+                diff = now - self.started_at
+
+            if diff >= 0:
+                return self._format_duration(diff)
+            else:
+                return "-"
 
         elif self.state == MatchState.WAITING:  # Waiting - show time since last updated
             if self.updated_at:
-                diff = now - self.updated_at
-                return self._format_duration(diff)
+                if start_time:
+                    # For simulation: calculate time since tournament start
+                    # Since we set updatedAt to start_time for initial matches,
+                    # this shows time since tournament began
+                    diff = now - self.updated_at
+                else:
+                    diff = now - self.updated_at
+
+                if diff >= 0:
+                    return self._format_duration(diff)
+                else:
+                    return "-"
             else:
                 return "-"
 

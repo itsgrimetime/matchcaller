@@ -81,6 +81,7 @@ class BracketSimulator:
         if not self.tournament_data:
             return
 
+        # Simple timeline: just track completions and starts from the original data
         events: List[TimelineEvent] = []
 
         for match in self.tournament_data["matches"]:
@@ -88,55 +89,44 @@ class BracketSimulator:
             if match["player1"]["tag"] == "TBD" or match["player2"]["tag"] == "TBD":
                 continue
 
-            # Add events for each state transition
-            if match.get("created_at"):
-                created_at = match["created_at"]
-                if created_at is not None:
-                    events.append(
-                        {
-                            "timestamp": created_at,
-                            "type": "match_created",
-                            "match_id": match["id"],
-                            "state": 1,
-                            "match": match,
-                        }
-                    )
+            # Add completion events
+            completed_at = match.get("completed_at")
+            if completed_at is not None:
+                events.append(
+                    {
+                        "timestamp": completed_at,
+                        "type": "match_completed",
+                        "match_id": match["id"],
+                        "state": 3,
+                        "match": match,
+                    }
+                )
 
-            if match.get("started_at"):
-                started_at = match["started_at"]
-                if started_at is not None:
-                    events.append(
-                        {
-                            "timestamp": started_at,
-                            "type": "match_started",
-                            "match_id": match["id"],
-                            "state": 2,  # or 6, we'll determine from context
-                            "match": match,
-                        }
-                    )
-
-            if match.get("completed_at"):
-                completed_at = match["completed_at"]
-                if completed_at is not None:
-                    events.append(
-                        {
-                            "timestamp": completed_at,
-                            "type": "match_completed",
-                            "match_id": match["id"],
-                            "state": 3,
-                            "match": match,
-                        }
-                    )
+            # Add start events
+            started_at = match.get("started_at")
+            if started_at is not None:
+                events.append(
+                    {
+                        "timestamp": started_at,
+                        "type": "match_started",
+                        "match_id": match["id"],
+                        "state": 2,
+                        "match": match,
+                    }
+                )
 
         # Sort events by timestamp
         events.sort(key=lambda e: e["timestamp"])
-
         self.timeline_events = events
 
         if events:
-            self.start_time = events[0]["timestamp"]
+            self.start_time = (
+                events[0]["timestamp"] - 3600
+            )  # Start 1 hour before first event
             log(f"📅 Timeline built: {len(events)} events")
-            log(f"🏁 First event: {time.ctime(self.start_time)}")
+            log(f"🏁 Tournament starts: {time.ctime(self.start_time)}")
+        else:
+            log("⚠️  No timeline events found - check tournament data")
 
     def get_current_state(self) -> TournamentState:
         """Get current tournament state based on simulation time - shows realistic bracket progression"""
@@ -158,6 +148,7 @@ class BracketSimulator:
             match["_simulation_context"] = {
                 "current_time": self.current_time,
                 "start_time": self.start_time,
+                "is_simulation": True,
             }
 
         return {
@@ -280,6 +271,10 @@ class BracketSimulator:
 
         realistic_matches: List[MatchData] = []
 
+        # Check if we're near tournament start - show all initial matches
+        tournament_start_threshold = self.start_time + 7200  # First 2 hours
+        is_tournament_start = self.current_time <= tournament_start_threshold
+
         for pool_name, pool_matches in pools.items():
             # Sort matches by priority: In Progress > Ready > Waiting
             # Within each state, prefer matches that started earlier
@@ -296,10 +291,6 @@ class BracketSimulator:
 
             pool_matches.sort(key=match_priority)
 
-            # Tournament organizers typically run 2-4 matches concurrently per pool
-            # depending on available stations/streams
-            max_concurrent = min(4, max(2, len(pool_matches) // 3))
-
             # Always show in-progress matches
             in_progress = [
                 m for m in pool_matches if m["state"] == MatchState.IN_PROGRESS
@@ -313,9 +304,15 @@ class BracketSimulator:
             # Add in-progress matches
             realistic_matches.extend(in_progress)
 
-            # Fill remaining slots with ready/waiting matches
-            remaining_slots = max_concurrent - len(in_progress)
-            realistic_matches.extend(ready_waiting[:remaining_slots])
+            if is_tournament_start:
+                # At tournament start, show ALL available matches (initial seeded matches)
+                realistic_matches.extend(ready_waiting)
+            else:
+                # Later in tournament, apply concurrent match limits
+                # Tournament organizers typically run 2-4 matches concurrently per pool
+                max_concurrent = min(4, max(2, len(pool_matches) // 3))
+                remaining_slots = max_concurrent - len(in_progress)
+                realistic_matches.extend(ready_waiting[:remaining_slots])
 
         return realistic_matches
 
@@ -343,23 +340,71 @@ class BracketSimulator:
             if match_id in completed_matches:
                 continue
 
-            # Check if prerequisites are met using entrant source information
+            # Skip matches with missing players
+            if match["player1"]["tag"] == "TBD" or match["player2"]["tag"] == "TBD":
+                continue
+
+            # Check if prerequisites are met using entrant source information AND phase progression
             entrant1_source = match.get("entrant1_source")
             entrant2_source = match.get("entrant2_source")
+            phase_name = match.get("phase_name", "")
+            round_number = match.get("round", 1)
 
             # Match is available if:
-            # 1. It has no entrant sources (seeded players - Round 1 match), OR
-            # 2. All source matches have been completed
+            # 1. It's in Bracket phase round 1 (initial matches), OR
+            # 2. All source matches have been completed AND phase prerequisites are met
             prerequisites_met = True
 
-            # Check if entrant 1 comes from a previous match that needs to be completed
-            if entrant1_source and entrant1_source.get("type") == "set":
+            # Special handling for phase progression
+            if phase_name == "Top 8":
+                # Top 8 matches only available after significant bracket progression
+                # Check if enough Bracket matches are completed to justify Top 8
+                bracket_completed = sum(
+                    1
+                    for mid in completed_matches
+                    for m in self.tournament_data["matches"]
+                    if m["id"] == mid and m.get("phase_name") == "Bracket"
+                )
+                # Only show Top 8 after at least 75% of bracket matches are done
+                total_bracket = sum(
+                    1
+                    for m in self.tournament_data["matches"]
+                    if m.get("phase_name") == "Bracket"
+                )
+                if bracket_completed < (total_bracket * 0.75):
+                    prerequisites_met = False
+
+            elif phase_name == "Top 24":
+                # Top 24 matches available after some bracket progression
+                bracket_completed = sum(
+                    1
+                    for mid in completed_matches
+                    for m in self.tournament_data["matches"]
+                    if m["id"] == mid and m.get("phase_name") == "Bracket"
+                )
+                total_bracket = sum(
+                    1
+                    for m in self.tournament_data["matches"]
+                    if m.get("phase_name") == "Bracket"
+                )
+                if bracket_completed < (total_bracket * 0.5):
+                    prerequisites_met = False
+
+            # Check if entrant sources have completed prerequisites
+            if (
+                prerequisites_met
+                and entrant1_source
+                and entrant1_source.get("type") == "set"
+            ):
                 source_set_id = entrant1_source.get("typeId")
                 if source_set_id and int(source_set_id) not in completed_matches:
                     prerequisites_met = False
 
-            # Check if entrant 2 comes from a previous match that needs to be completed
-            if entrant2_source and entrant2_source.get("type") == "set":
+            if (
+                prerequisites_met
+                and entrant2_source
+                and entrant2_source.get("type") == "set"
+            ):
                 source_set_id = entrant2_source.get("typeId")
                 if source_set_id and int(source_set_id) not in completed_matches:
                     prerequisites_met = False
@@ -378,18 +423,53 @@ class BracketSimulator:
                 # Determine match state based on simulation time and events
                 match_copy["state"] = self._determine_match_state(match_id, match_copy)
 
-                # Use simulation-normalized timestamps for consistent duration calculations
-                # Calculate normalized time based on original tournament timeline
-                original_updated = match_copy.get("updated_at", 0)
-                if original_updated and self.start_time:
-                    # Convert original tournament time to simulation time
-                    original_offset = original_updated - self.start_time
-                    match_copy["updatedAt"] = self.start_time + original_offset
-                else:
-                    # Fallback to current simulation time
-                    match_copy["updatedAt"] = self.current_time
+                # Set updatedAt to when the match became available in simulation
+                # This enables proper "time since ready" calculations
+                current_state = match_copy["state"]
 
-                # Set normalized startedAt if match has started
+                # For initial matches at tournament start, set updatedAt to tournament start time
+                # This shows "time since tournament began" for initial waiting matches
+                if (
+                    phase_name == "Bracket"
+                    and match_copy.get("round", 1) == 1
+                    and current_state == MatchState.WAITING
+                ):
+                    match_copy["updatedAt"] = self.start_time
+                else:
+                    # Find when this match changed to current state from timeline events
+                    state_change_event = None
+                    for event in reversed(self.timeline_events):  # Check latest first
+                        if (
+                            event["match_id"] == match_id
+                            and event["timestamp"] <= self.current_time
+                        ):
+                            # Look for state change events
+                            if (
+                                (
+                                    current_state == MatchState.READY
+                                    and event["type"]
+                                    in ["match_created", "match_ready"]
+                                )
+                                or (
+                                    current_state == MatchState.IN_PROGRESS
+                                    and event["type"] == "match_started"
+                                )
+                                or (
+                                    current_state == MatchState.WAITING
+                                    and event["type"] == "match_created"
+                                )
+                            ):
+                                state_change_event = event
+                                break
+
+                    if state_change_event:
+                        match_copy["updatedAt"] = state_change_event["timestamp"]
+                    else:
+                        # Fallback: use original timestamp or current time
+                        original_updated = match_copy.get("updated_at", 0)
+                        match_copy["updatedAt"] = original_updated or self.current_time
+
+                # Set startedAt based on simulation events
                 started_event = next(
                     (
                         e
@@ -401,17 +481,16 @@ class BracketSimulator:
                     None,
                 )
                 if started_event:
-                    # Convert original started time to simulation time
-                    original_offset = started_event["timestamp"] - self.start_time
-                    match_copy["startedAt"] = self.start_time + original_offset
+                    # Use the event timestamp directly
+                    match_copy["startedAt"] = started_event["timestamp"]
+                else:
+                    match_copy["startedAt"] = None
 
                 available_matches.append(match_copy)
 
         return available_matches
 
-    def _determine_match_state(
-        self, match_id: int, match_data: MatchData
-    ) -> int:  # noqa: ARG002
+    def _determine_match_state(self, match_id: int, match_data: MatchData) -> int:
         """Determine the current state of a match based on simulation time"""
         # Check for events affecting this match up to current time
         relevant_events: List[TimelineEvent] = [
@@ -437,6 +516,84 @@ class BracketSimulator:
             return MatchState.READY  # Ready to be called
 
         return MatchState.WAITING  # Default to waiting
+
+    def _build_dependency_graph(self) -> Dict[int, List[int]]:
+        """Build a graph of match dependencies - which matches depend on which other matches"""
+        dependencies: Dict[int, List[int]] = {}
+
+        if not self.tournament_data:
+            return dependencies
+
+        for match in self.tournament_data["matches"]:
+            match_id = match["id"]
+            dependencies[match_id] = []
+
+            # Check if entrant 1 comes from a previous match
+            entrant1_source = match.get("entrant1_source")
+            if entrant1_source and entrant1_source.get("type") == "set":
+                source_set_id = entrant1_source.get("typeId")
+                if source_set_id:
+                    dependencies[match_id].append(int(source_set_id))
+
+            # Check if entrant 2 comes from a previous match
+            entrant2_source = match.get("entrant2_source")
+            if entrant2_source and entrant2_source.get("type") == "set":
+                source_set_id = entrant2_source.get("typeId")
+                if source_set_id:
+                    dependencies[match_id].append(int(source_set_id))
+
+        return dependencies
+
+    def _has_no_dependencies(self, match: MatchData) -> bool:
+        """Check if a match has no dependencies (seeded players only)"""
+        entrant1_source = match.get("entrant1_source")
+        entrant2_source = match.get("entrant2_source")
+
+        # Match has no dependencies if neither player comes from a previous set
+        # (i.e., both are seeded players or have no sources)
+        has_entrant1_set_source = (
+            entrant1_source and entrant1_source.get("type") == "set"
+        )
+        has_entrant2_set_source = (
+            entrant2_source and entrant2_source.get("type") == "set"
+        )
+
+        return not has_entrant1_set_source and not has_entrant2_set_source
+
+    def _find_newly_available_matches(
+        self,
+        completed_match_id: int,
+        completed_matches: Set[int],
+        dependencies: Dict[int, List[int]],
+    ) -> List[MatchData]:
+        """Find matches that become available after a match is completed"""
+        newly_available: List[MatchData] = []
+
+        if not self.tournament_data:
+            return newly_available
+
+        for match in self.tournament_data["matches"]:
+            match_id = match["id"]
+
+            # Skip if already completed or has missing players
+            if (
+                match_id in completed_matches
+                or match["player1"]["tag"] == "TBD"
+                or match["player2"]["tag"] == "TBD"
+            ):
+                continue
+
+            # Check if this match depends on the completed match
+            match_dependencies = dependencies.get(match_id, [])
+            if completed_match_id in match_dependencies:
+                # Check if ALL dependencies are now met
+                all_deps_met = all(
+                    dep_id in completed_matches for dep_id in match_dependencies
+                )
+                if all_deps_met:
+                    newly_available.append(match)
+
+        return newly_available
 
 
 class SimulatedTournamentAPI(TournamentAPI):
@@ -478,7 +635,7 @@ class SimulatedTournamentAPI(TournamentAPI):
 
             # Use speed multiplier for time advancement
             # Default: advance by 30 seconds of real time, scaled by speed multiplier
-            real_time_advance = 30  # 30 seconds of tournament time per API call
+            real_time_advance = 1  # 30 seconds of tournament time per API call
             advance_seconds = int(real_time_advance * self.simulator.speed_multiplier)
             self.simulator.current_time += advance_seconds
 

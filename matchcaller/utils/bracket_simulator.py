@@ -348,7 +348,6 @@ class BracketSimulator:
             entrant1_source = match.get("entrant1_source")
             entrant2_source = match.get("entrant2_source")
             phase_name = match.get("phase_name", "")
-            round_number = match.get("round", 1)
 
             # Match is available if:
             # 1. It's in Bracket phase round 1 (initial matches), OR

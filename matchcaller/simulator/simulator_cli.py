@@ -8,15 +8,26 @@ import argparse
 import asyncio
 import sys
 import time
-from typing import Dict
+from typing import Any
 
-from matchcaller.ui import TournamentDisplay
-from matchcaller.utils.bracket_simulator import BracketSimulator, SimulatedTournamentAPI
-from matchcaller.utils.logging import log
-from matchcaller.utils.tournament_cloner import TournamentCloner
+from ..models.match import TournamentState
+
+from ..ui import TournamentDisplay
+
+from ..utils.logging import log
+from .bracket_simulator import BracketSimulator, SimulatedTournamentAPI
+from .tournament_cloner import TournamentCloner
 
 
-async def clone_tournament(args) -> int:
+class SimulatorArgs(argparse.Namespace):
+    token: str = ""
+    slug: str = ""
+    file: str = ""
+    speed: float = 1.0
+    gui: bool = False
+
+
+async def clone_tournament(args: SimulatorArgs) -> int:
     """Clone a tournament from start.gg"""
     if not args.token:
         log("❌ API token required for cloning. Use --token YOUR_TOKEN")
@@ -43,7 +54,7 @@ async def clone_tournament(args) -> int:
         return 1
 
 
-def list_tournaments(args) -> int:
+def list_tournaments(_: SimulatorArgs) -> int:
     """List all cloned tournaments"""
     cloner = TournamentCloner("")  # No token needed for listing
     tournaments = cloner.list_cloned_tournaments()
@@ -74,7 +85,7 @@ def list_tournaments(args) -> int:
     return 0
 
 
-def simulate_tournament(args) -> int:
+def simulate_tournament(args: SimulatorArgs) -> int:
     """Run a tournament simulation"""
     simulator = BracketSimulator(args.file, args.speed)
 
@@ -111,16 +122,16 @@ def simulate_tournament(args) -> int:
         # Run simulation only (console output)
         print("📊 Console simulation mode")
 
-        async def console_callback(state):
+        async def console_callback(state: TournamentState) -> None:
             """Print simulation state to console"""
-            print(f"📊 {state['event_name']}: {len(state['sets'])} active matches")
-            for match in state["sets"][:5]:  # Show first 5 matches
-                status = {1: "Waiting", 2: "Ready", 6: "In Progress"}[match["state"]]
+            print(f"📊 {state.event_name}: {len(state.sets)} active matches")
+            for match in state.sets[:5]:  # Show first 5 matches
+                status = {1: "Waiting", 2: "Ready", 6: "In Progress"}[match.state]
                 print(
-                    f"   {match['player1']['tag']} vs {match['player2']['tag']} - {status}"
+                    f"   {match.player1.tag} vs {match.player2.tag} - {status}"
                 )
-            if len(state["sets"]) > 5:
-                print(f"   ... and {len(state['sets']) - 5} more matches")
+            if len(state.sets) > 5:
+                print(f"   ... and {len(state.sets) - 5} more matches")
             print("")
 
         # Run async simulation in sync function
@@ -131,7 +142,7 @@ def simulate_tournament(args) -> int:
     return 0
 
 
-def analyze_tournament(args) -> int:
+def analyze_tournament(args: SimulatorArgs) -> int:
     """Analyze a cloned tournament file"""
     simulator = BracketSimulator(args.file)
 
@@ -154,8 +165,8 @@ def analyze_tournament(args) -> int:
     print("")
 
     # Analyze match states
-    state_counts: Dict[int, int] = {}
-    phase_counts: Dict[str, int] = {}
+    state_counts: dict[int, int] = {}
+    phase_counts: dict[str, int] = {}
 
     for match in data["matches"]:
         state = match["state"]
@@ -167,7 +178,7 @@ def analyze_tournament(args) -> int:
         phase_counts[phase] = phase_counts.get(phase, 0) + 1
 
     print("Match States:")
-    state_names: Dict[int, str] = {
+    state_names: dict[int, str] = {
         1: "Created/Waiting",
         2: "Ready/In Progress",
         3: "Completed",
@@ -252,7 +263,7 @@ Examples:
     analyze_parser = subparsers.add_parser("analyze", help="Analyze tournament data")
     analyze_parser.add_argument("file", help="Cloned tournament JSON file")
 
-    args = parser.parse_args()
+    args: SimulatorArgs = parser.parse_args(namespace=SimulatorArgs())
 
     if not args.command:
         parser.print_help()

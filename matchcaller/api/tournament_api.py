@@ -3,12 +3,16 @@
 import asyncio
 import json
 import time
-from typing import Any, Dict, List, Optional
 
 import aiohttp
 
-from ..models.match import MatchData, TournamentState
+from ..models.match import MatchData, PlayerData, TournamentState
 from ..models.mock_data import MOCK_TOURNAMENT_DATA
+from ..models.startgg_api import (
+    StartGGAPIResponse,
+    StartGGEventBySlugResponse,
+    StartGGEventSetsResponse,
+)
 from ..utils.logging import log
 
 
@@ -17,14 +21,14 @@ class TournamentAPI:
 
     def __init__(
         self,
-        api_token: Optional[str] = None,
-        event_id: Optional[str] = None,
-        event_slug: Optional[str] = None,
+        api_token: str | None = None,
+        event_id: str | None = None,
+        event_slug: str | None = None,
     ):
-        self.api_token = api_token
-        self.event_id = event_id
-        self.event_slug = event_slug  # New: accept event slug
-        self.base_url = "https://api.start.gg/gql/alpha"
+        self.api_token: str | None = api_token
+        self.event_id: str | None = event_id
+        self.event_slug: str | None = event_slug  # New: accept event slug
+        self.base_url: str = "https://api.start.gg/gql/alpha"
 
     async def fetch_sets(self) -> TournamentState:
         """Fetch tournament sets from start.gg API"""
@@ -121,65 +125,86 @@ class TournamentAPI:
                             f"HTTP {response.status}: {error_text}"
                         )
 
-                    data = await response.json()
-                    log(f"🔍 Raw API response keys: {list(data.keys())}")
+                    raw_data = await response.json()
+                    log(f"🔍 Raw API response keys: {list(raw_data.keys())}")
 
-                    if "errors" in data:
-                        log(f"❌ GraphQL Errors: {data['errors']}")
-                        for error in data["errors"]:
-                            log(f"   - {error.get('message', 'Unknown error')}")
-                        raise Exception(f"GraphQL errors: {data['errors']}")
+                    # Parse and validate the response with Pydantic
+                    try:
+                        api_response = StartGGAPIResponse(**raw_data)
+                    except Exception as e:
+                        log(f"❌ Pydantic validation error: {e}")
+                        log(
+                            f"📋 Raw response: {json.dumps(raw_data, indent=2)[:500]}..."
+                        )
+                        raise Exception(f"API response validation failed: {e}")
 
-                    if not data.get("data"):
-                        log(f"❌ No data in response: {data}")
+                    if api_response.errors:
+                        log("❌ GraphQL Errors: {api_response.errors}")
+                        for error in api_response.errors:
+                            log(f"   - {error.message}")
+                        raise Exception(f"GraphQL errors: {api_response.errors}")
+
+                    if not api_response.data:
+                        log("❌ No data in response")
                         raise Exception("No data field in API response")
 
-                    if not data["data"].get("event"):
-                        log(f"❌ No event found for ID {self.event_id}")
+                    # Type narrowing for the response data
+                    if not isinstance(api_response.data, StartGGEventSetsResponse):
+                        log("❌ Unexpected response type")
+                        raise Exception("Expected StartGGEventSetsResponse")
+
+                    if not api_response.data.event:
+                        log("❌ No event found for ID {self.event_id}")
                         raise Exception(f"Event not found for ID: {self.event_id}")
 
-                    log("✅ Successfully fetched data!")
-                    event_name = data["data"]["event"]["name"]
-                    sets_count = len(data["data"]["event"]["sets"]["nodes"])
-                    log(f"📊 Event: {event_name}")
+                    event = api_response.data.event
+                    log("✅ Successfully fetched and validated data!")
+                    log(f"📊 Event: {event.name}")
+
+                    sets_count = 0
+                    if event.sets:
+                        sets_count = len(event.sets.nodes)
                     log(f"📊 Found {sets_count} sets")
 
                     # Log some sample sets to see what states they have
-                    if sets_count > 0:
+                    if sets_count > 0 and event.sets:
                         for i, set_data in enumerate(
-                            data["data"]["event"]["sets"]["nodes"][:5]
+                            event.sets.nodes[:5]
                         ):  # First 5 sets
                             player1 = "TBD"
                             player2 = "TBD"
-                            if set_data["slots"] and len(set_data["slots"]) >= 2:
+
+                            if len(set_data.slots) >= 2:
+                                # Player 1
                                 if (
-                                    set_data["slots"][0]
-                                    and set_data["slots"][0].get("entrant")
-                                    and set_data["slots"][0]["entrant"].get(
-                                        "participants"
-                                    )
+                                    set_data.slots[0].entrant
+                                    and set_data.slots[0].entrant.participants
+                                    and len(set_data.slots[0].entrant.participants) > 0
                                 ):
-                                    player1 = set_data["slots"][0]["entrant"][
-                                        "participants"
-                                    ][0]["gamerTag"]
+                                    player1 = (
+                                        set_data.slots[0]
+                                        .entrant.participants[0]
+                                        .gamerTag
+                                    )
+
+                                # Player 2
                                 if (
-                                    set_data["slots"][1]
-                                    and set_data["slots"][1].get("entrant")
-                                    and set_data["slots"][1]["entrant"].get(
-                                        "participants"
-                                    )
+                                    set_data.slots[1].entrant
+                                    and set_data.slots[1].entrant.participants
+                                    and len(set_data.slots[1].entrant.participants) > 0
                                 ):
-                                    player2 = set_data["slots"][1]["entrant"][
-                                        "participants"
-                                    ][0]["gamerTag"]
+                                    player2 = (
+                                        set_data.slots[1]
+                                        .entrant.participants[0]
+                                        .gamerTag
+                                    )
 
                             log(
                                 f"📋 Sample set {i+1}: {player1} vs {player2} - State: "
-                                f"{set_data['state']} - Round: "
-                                f"{set_data.get('fullRoundText', 'N/A')}"
+                                f"{set_data.state} - Round: {set_data.fullRoundText or 'N/A'}"
                             )
 
-                    return self.parse_api_response(data)
+                    return self.parse_api_response(api_response)
 
         except Exception as e:
             log(f"❌ API Error: {type(e).__name__}: {e}")
@@ -187,17 +212,29 @@ class TournamentAPI:
             # Return mock data on error so the display still works
             return MOCK_TOURNAMENT_DATA
 
-    def parse_api_response(self, data: Dict[str, Any]) -> TournamentState:
+    def parse_api_response(self, api_response: StartGGAPIResponse) -> TournamentState:
         """Parse the start.gg API response into our format"""
         try:
-            event_data = data["data"]["event"]
-            event_name = event_data["name"]
-            tournament_name = event_data.get("tournament", {}).get(
-                "name", "Unknown Tournament"
-            )
-            sets_data = event_data["sets"]["nodes"]
+            # Validate we have the expected response structure
+            if not api_response.data or not isinstance(
+                api_response.data, StartGGEventSetsResponse
+            ):
+                raise Exception("Invalid API response structure")
 
-            parsed_sets: List[MatchData] = []
+            if not api_response.data.event:
+                raise Exception("No event data in response")
+
+            event = api_response.data.event
+            event_name = event.name
+            tournament_name = "Unknown Tournament"
+            if event.tournament:
+                tournament_name = event.tournament.name
+
+            sets_data = []
+            if event.sets:
+                sets_data = event.sets.nodes
+
+            parsed_sets: list[MatchData] = []
             total_sets = len(sets_data)
             skipped_tbd_count = 0
             log(f"🔍 Processing {total_sets} sets from API")
@@ -207,37 +244,35 @@ class TournamentAPI:
                 player1_name = "TBD"
                 player2_name = "TBD"
 
-                if set_data["slots"] and len(set_data["slots"]) >= 2:
+                if len(set_data.slots) >= 2:
                     # Player 1
-                    slot1 = set_data["slots"][0]
+                    slot1 = set_data.slots[0]
                     if (
-                        slot1
-                        and slot1.get("entrant")
-                        and slot1["entrant"].get("participants")
-                        and len(slot1["entrant"]["participants"]) > 0
+                        slot1.entrant
+                        and slot1.entrant.participants
+                        and len(slot1.entrant.participants) > 0
                     ):
-                        player1_name = slot1["entrant"]["participants"][0]["gamerTag"]
+                        player1_name = slot1.entrant.participants[0].gamerTag
 
                     # Player 2
-                    slot2 = set_data["slots"][1]
+                    slot2 = set_data.slots[1]
                     if (
-                        slot2
-                        and slot2.get("entrant")
-                        and slot2["entrant"].get("participants")
-                        and len(slot2["entrant"]["participants"]) > 0
+                        slot2.entrant
+                        and slot2.entrant.participants
+                        and len(slot2.entrant.participants) > 0
                     ):
-                        player2_name = slot2["entrant"]["participants"][0]["gamerTag"]
+                        player2_name = slot2.entrant.participants[0].gamerTag
 
                 # Create bracket name from phase and round info
                 bracket_name = "Unknown Bracket"
                 pool_name = "Unknown Pool"
 
-                if set_data.get("phaseGroup"):
-                    phase_group = set_data["phaseGroup"]
+                if set_data.phaseGroup:
+                    phase_group = set_data.phaseGroup
 
                     # Get pool/group identifier and format it nicely
-                    if phase_group.get("displayIdentifier"):
-                        raw_identifier = phase_group["displayIdentifier"]
+                    if phase_group.displayIdentifier:
+                        raw_identifier = phase_group.displayIdentifier
                         # Format pool names nicely
                         if raw_identifier.isdigit():
                             pool_name = f"Pool {raw_identifier}"
@@ -247,17 +282,17 @@ class TournamentAPI:
                             pool_name = raw_identifier
 
                     # Get phase name for bracket
-                    if phase_group.get("phase") and phase_group["phase"].get("name"):
-                        phase_name = phase_group["phase"]["name"]
+                    if phase_group.phase and phase_group.phase.name:
+                        phase_name = phase_group.phase.name
                         bracket_name = phase_name
 
                 # Add round information to bracket name
-                if set_data.get("fullRoundText"):
-                    bracket_name += f" - {set_data['fullRoundText']}"
-                elif set_data.get("identifier"):
-                    bracket_name += f" - {set_data['identifier']}"
-                elif set_data.get("round"):
-                    bracket_name += f" - Round {set_data['round']}"
+                if set_data.fullRoundText:
+                    bracket_name += f" - {set_data.fullRoundText}"
+                elif set_data.identifier:
+                    bracket_name += f" - {set_data.identifier}"
+                elif set_data.round:
+                    bracket_name += f" - Round {set_data.round}"
 
                 # Skip matches where both players are TBD (not yet determined)
                 if player1_name == "TBD" or player2_name == "TBD":
@@ -265,46 +300,40 @@ class TournamentAPI:
                     log(f"⏭️  Skipping TBD match: {player1_name} vs {player2_name}")
                     continue
 
-                parsed_set: MatchData = {
-                    "id": set_data["id"],
-                    "display_name": bracket_name,
-                    "displayName": bracket_name,
-                    "poolName": pool_name,
-                    "phase_group": pool_name,
-                    "phase_name": pool_name,
-                    "player1": {"tag": player1_name, "id": None},
-                    "player2": {"tag": player2_name, "id": None},
-                    "state": set_data["state"],
-                    "created_at": None,
-                    "started_at": set_data.get("startedAt"),
-                    "completed_at": None,
-                    "updated_at": set_data["updatedAt"] or int(time.time()),
-                    "updatedAt": set_data["updatedAt"] or int(time.time()),
-                    "startedAt": set_data.get("startedAt"),
-                    "entrant1_source": None,
-                    "entrant2_source": None,
-                    "station": (
-                        set_data.get("station", {}).get("number")
-                        if set_data.get("station")
-                        else None
+                parsed_set: MatchData = MatchData(
+                    id=set_data.id,
+                    display_name=bracket_name,
+                    displayName=bracket_name,
+                    poolName=pool_name,
+                    phase_group=pool_name,
+                    phase_name=pool_name,
+                    player1=PlayerData(tag=player1_name, id=None),
+                    player2=PlayerData(tag=player2_name, id=None),
+                    state=set_data.state,
+                    created_at=None,
+                    started_at=set_data.startedAt,
+                    completed_at=None,
+                    updated_at=set_data.updatedAt or int(time.time()),
+                    updatedAt=set_data.updatedAt or int(time.time()),
+                    startedAt=set_data.startedAt,
+                    entrant1_source=None,
+                    entrant2_source=None,
+                    station=(
+                        str(set_data.station.number) if set_data.station else None
                     ),
-                    "stream": (
-                        set_data.get("stream", {}).get("streamName")
-                        if set_data.get("stream")
-                        else None
-                    ),
-                    "_simulation_context": None,
-                }
+                    stream=(set_data.stream.streamName if set_data.stream else None),
+                    _simulation_context=None,
+                )
                 parsed_sets.append(parsed_set)
                 log(
-                    f"📋 Parsed set: {player1_name} vs {player2_name} ({bracket_name}) - State: {set_data['state']}"
+                    f"📋 Parsed set: {player1_name} vs {player2_name} ({bracket_name}) - State: {set_data.state}"
                 )
 
-            result: TournamentState = {
-                "event_name": event_name,
-                "tournament_name": tournament_name,
-                "sets": parsed_sets,
-            }
+            result: TournamentState = TournamentState(
+                event_name=event_name,
+                tournament_name=tournament_name,
+                sets=parsed_sets,
+            )
             log(f"✅ Successfully parsed {len(parsed_sets)} sets")
             log(
                 f"📊 Total sets from API: {total_sets}, Skipped TBD vs TBD: "
@@ -314,10 +343,9 @@ class TournamentAPI:
 
         except Exception as e:
             log(f"❌ Error parsing API response: {e}")
-            log(f"📋 Response structure: {json.dumps(data, indent=2)[:500]}...")
             return MOCK_TOURNAMENT_DATA
 
-    async def get_event_id_from_slug(self, event_slug: str) -> Optional[str]:
+    async def get_event_id_from_slug(self, event_slug: str) -> str | None:
         """Get event ID from event slug (e.g., 'tournament/the-c-stick-55/event/melee-singles')"""
 
         # Auto-fix common slug format issues
@@ -358,14 +386,29 @@ class TournamentAPI:
                         log(f"❌ HTTP Error getting event ID: {error_text}")
                         return None
 
-                    data = await response.json()
-                    log(f"🔍 Event ID response: {data}")
+                    raw_data = await response.json()
+                    log(f"🔍 Event ID response: {raw_data}")
 
-                    if "errors" in data:
-                        log(f"❌ GraphQL Errors getting event ID: {data['errors']}")
+                    # Parse and validate the response with Pydantic
+                    try:
+                        api_response = StartGGAPIResponse(**raw_data)
+                    except Exception as e:
+                        log(f"❌ Pydantic validation error for event ID: {e}")
                         return None
 
-                    if not data.get("data") or not data["data"].get("event"):
+                    if api_response.errors:
+                        log(
+                            f"❌ GraphQL Errors getting event ID: {api_response.errors}"
+                        )
+                        return None
+
+                    if not api_response.data or not isinstance(
+                        api_response.data, StartGGEventBySlugResponse
+                    ):
+                        log("❌ Invalid response structure for event lookup")
+                        return None
+
+                    if not api_response.data.event:
                         log(f"❌ No event found for slug: {event_slug}")
                         log(
                             "💡 Slug format should be: tournament/tournament-name/event/event-name"
@@ -374,8 +417,14 @@ class TournamentAPI:
                         log("💡 Or try finding the correct slug from the start.gg URL")
                         return None
 
-                    event_id = data["data"]["event"]["id"]
-                    event_name = data["data"]["event"]["name"]
+                    event = api_response.data.event
+                    event_id = str(event.id) if event.id else None
+                    event_name = event.name
+
+                    if not event_id:
+                        log("❌ Event found but no ID available")
+                        return None
+
                     log(f"✅ Found event: {event_name} (ID: {event_id})")
                     return event_id
 

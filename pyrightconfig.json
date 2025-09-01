@@ -10,9 +10,11 @@
     "**/build",
     "**/dist"
   ],
+  "reportImplicitStringConcatenation": false,
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
   "reportUnusedImport": true,
+  "reportUnusedCallResult": false,
   "reportUnusedClass": true,
   "reportUnusedFunction": true,
   "reportUnusedVariable": true,

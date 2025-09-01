@@ -8,6 +8,27 @@ from .ui import TournamentDisplay
 from .utils.logging import log
 
 
+class MatchCallerArgs(argparse.Namespace):
+    token: str | None = None
+    event: str | None = None
+    slug: str | None = None
+    demo: bool = False
+    simulate: str | None = None
+
+
+def cleanup_terminal():
+    """Cleanup terminal state to prevent mouse tracking issues"""
+    try:
+        import sys
+
+        sys.stdout.write(
+            "\033[?1000l\033[?1003l\033[?1015l\033[?1006l\033[?25h\033[?1004l"
+        )
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(description="Tournament Display TUI")
@@ -23,7 +44,7 @@ def main():
         help="Run with simulated data from cloned tournament file",
     )
 
-    args = parser.parse_args()
+    args: MatchCallerArgs = parser.parse_args(namespace=MatchCallerArgs())
 
     log("🔍 Command line args:")
     log(f"   Token: {'***' + args.token[-4:] if args.token else 'None'}")
@@ -42,7 +63,10 @@ def main():
         log(f"📁 Loading tournament data from: {args.simulate}")
 
         # Import simulator components
-        from .utils.bracket_simulator import BracketSimulator, SimulatedTournamentAPI
+        from .simulator.bracket_simulator import (
+            BracketSimulator,
+            SimulatedTournamentAPI,
+        )
 
         # Create simulator
         simulator = BracketSimulator(args.simulate, speed_multiplier=60.0)
@@ -58,18 +82,6 @@ def main():
         # Create and run app with simulation directly
         app = TournamentDisplay(api_token=None, event_id=None, event_slug=None)
         app.api = SimulatedTournamentAPI(simulator)
-
-        def cleanup_terminal():
-            """Cleanup terminal state to prevent mouse tracking issues"""
-            try:
-                import sys
-
-                sys.stdout.write(
-                    "\033[?1000l\033[?1003l\033[?1015l\033[?1006l\033[?25h\033[?1004l"
-                )
-                sys.stdout.flush()
-            except Exception:
-                pass
 
         try:
             log("🏁 Starting simulation...")
@@ -118,18 +130,6 @@ def main():
     app = TournamentDisplay(
         api_token=token_to_use, event_id=event_to_use, event_slug=slug_to_use
     )
-
-    def cleanup_terminal():
-        """Cleanup terminal state to prevent mouse tracking issues"""
-        try:
-            import sys
-
-            sys.stdout.write(
-                "\033[?1000l\033[?1003l\033[?1015l\033[?1006l\033[?25h\033[?1004l"
-            )
-            sys.stdout.flush()
-        except Exception:
-            pass
 
     try:
         log("🏁 Starting Textual app...")

@@ -4,7 +4,9 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Callable
+
+from typing_extensions import override
 
 from ..api.tournament_api import TournamentAPI
 from ..models.match import (
@@ -15,7 +17,7 @@ from ..models.match import (
     TournamentData,
     TournamentState,
 )
-from .logging import log
+from ..utils.logging import log
 
 
 class BracketSimulator:
@@ -23,11 +25,11 @@ class BracketSimulator:
 
     tournament_file: Path
     speed_multiplier: float
-    tournament_data: Optional[TournamentData]
+    tournament_data: TournamentData | None
     current_time: int
     start_time: int
     is_running: bool
-    timeline_events: List[TimelineEvent]
+    timeline_events: list[TimelineEvent]
 
     def __init__(self, tournament_file: str, speed_multiplier: float = 60.0) -> None:
         """
@@ -46,10 +48,11 @@ class BracketSimulator:
         self.timeline_events = []
 
     def load_tournament_data_from_file(
-        self, tournament_file: Union[str, Path]
+        self, tournament_file: str | Path
     ) -> TournamentData:
         with open(tournament_file, "r") as f:
-            tournament_data: TournamentData = json.loads(f.read())
+            raw_data = json.loads(f.read())
+            tournament_data = TournamentData(**raw_data)
             return tournament_data
 
     def load_tournament(self) -> bool:
@@ -59,16 +62,12 @@ class BracketSimulator:
                 self.tournament_file
             )
 
-            log(
-                f"📁 Loaded tournament: {self.tournament_data['metadata']['event_name']}"
-            )
-            log(
-                f"📊 Total matches: {self.tournament_data['metadata']['total_matches']}"
-            )
-            log(f"⏱️  Duration: {self.tournament_data['duration_minutes']} minutes")
+            log(f"📁 Loaded tournament: {self.tournament_data.metadata.event_name}")
+            log(f"📊 Total matches: {self.tournament_data.metadata.total_matches}")
+            log(f"⏱️  Duration: {self.tournament_data.duration_minutes} minutes")
 
             # Build timeline of events
-            self._build_timeline()
+            self.build_timeline()
 
             return True
 
@@ -76,13 +75,13 @@ class BracketSimulator:
             log(f"❌ Error loading tournament file: {e}")
             return False
 
-    def _build_timeline(self) -> None:
+    def build_timeline(self) -> None:
         """Build a timeline of all state transition events"""
         if not self.tournament_data:
             return
 
         # Simple timeline: just track completions and starts from the original data
-        events: List[TimelineEvent] = []
+        events: list[TimelineEvent] = []
 
         for match in self.tournament_data["matches"]:
             # Skip matches with missing players
@@ -93,35 +92,35 @@ class BracketSimulator:
             completed_at = match.get("completed_at")
             if completed_at is not None:
                 events.append(
-                    {
-                        "timestamp": completed_at,
-                        "type": "match_completed",
-                        "match_id": match["id"],
-                        "state": 3,
-                        "match": match,
-                    }
+                    TimelineEvent(
+                        timestamp=completed_at,
+                        type="match_completed",
+                        match_id=match["id"],
+                        state=3,
+                        match=match,
+                    )
                 )
 
             # Add start events
             started_at = match.get("started_at")
             if started_at is not None:
                 events.append(
-                    {
-                        "timestamp": started_at,
-                        "type": "match_started",
-                        "match_id": match["id"],
-                        "state": 2,
-                        "match": match,
-                    }
+                    TimelineEvent(
+                        timestamp=started_at,
+                        type="match_started",
+                        match_id=match["id"],
+                        state=2,
+                        match=match,
+                    )
                 )
 
         # Sort events by timestamp
-        events.sort(key=lambda e: e["timestamp"])
+        events.sort(key=lambda e: e.timestamp)
         self.timeline_events = events
 
         if events:
             self.start_time = (
-                events[0]["timestamp"] - 3600
+                events[0].timestamp - 3600
             )  # Start 1 hour before first event
             log(f"📅 Timeline built: {len(events)} events")
             log(f"🏁 Tournament starts: {time.ctime(self.start_time)}")
@@ -131,11 +130,11 @@ class BracketSimulator:
     def get_current_state(self) -> TournamentState:
         """Get current tournament state based on simulation time - shows realistic bracket progression"""
         if not self.tournament_data:
-            return {
-                "event_name": "No Tournament",
-                "tournament_name": "No Tournament",
-                "sets": [],
-            }
+            return TournamentState(
+                event_name="No Tournament",
+                tournament_name="No Tournament",
+                sets=[],
+            )
 
         # Get all available matches based on bracket dependencies and simulation time
         available_matches = self._get_available_matches()
@@ -151,14 +150,14 @@ class BracketSimulator:
                 "is_simulation": True,
             }
 
-        return {
-            "event_name": self.tournament_data["metadata"]["event_name"],
-            "tournament_name": self.tournament_data["metadata"]["tournament_name"],
-            "sets": realistic_matches,
-        }
+        return TournamentState(
+            event_name=self.tournament_data.metadata.event_name,
+            tournament_name=self.tournament_data.metadata.tournament_name,
+            sets=realistic_matches,
+        )
 
     async def start_simulation(
-        self, callback: Optional[Callable[[TournamentState], Any]] = None
+        self, callback: Callable[[TournamentState], Any] | None = None
     ) -> None:
         """Start the simulation with optional callback for state updates"""
         if not self.tournament_data:
@@ -180,7 +179,7 @@ class BracketSimulator:
         try:
             while (
                 self.is_running
-                and self.current_time <= self.timeline_events[-1]["timestamp"]
+                and self.current_time <= self.timeline_events[-1].timestamp
             ):
                 current_state = self.get_current_state()
 
@@ -215,31 +214,31 @@ class BracketSimulator:
     def get_simulation_progress(self) -> SimulationProgress:
         """Get current simulation progress"""
         if not self.timeline_events:
-            return {
-                "progress": 0.0,
-                "current_time": 0,
-                "start_time": 0,
-                "end_time": 0,
-                "current_time_str": time.ctime(0),
-                "active_matches": 0,
-            }
+            return SimulationProgress(
+                progress=0.0,
+                current_time=0,
+                start_time=0,
+                end_time=0,
+                current_time_str=time.ctime(0),
+                active_matches=0,
+            )
 
-        end_time = self.timeline_events[-1]["timestamp"]
+        end_time = self.timeline_events[-1].timestamp
         progress = (self.current_time - self.start_time) / (end_time - self.start_time)
 
-        return {
-            "progress": min(1.0, max(0.0, progress)),
-            "current_time": self.current_time,
-            "start_time": self.start_time,
-            "end_time": end_time,
-            "current_time_str": time.ctime(self.current_time),
-            "active_matches": len(self.get_current_state()["sets"]),
-        }
+        return SimulationProgress(
+            progress=min(1.0, max(0.0, progress)),
+            current_time=self.current_time,
+            start_time=self.start_time,
+            end_time=end_time,
+            current_time_str=time.ctime(self.current_time),
+            active_matches=len(self.get_current_state().sets),
+        )
 
     def jump_to_time(self, timestamp: int) -> None:
         """Jump simulation to specific timestamp"""
         self.current_time = max(
-            self.start_time, min(timestamp, self.timeline_events[-1]["timestamp"])
+            self.start_time, min(timestamp, self.timeline_events[-1].timestamp)
         )
         log(f"⏭️  Jumped to: {time.ctime(self.current_time)}")
 
@@ -249,27 +248,27 @@ class BracketSimulator:
             return
 
         progress = max(0.0, min(1.0, progress))
-        end_time = self.timeline_events[-1]["timestamp"]
+        end_time = self.timeline_events[-1].timestamp
         target_time = self.start_time + (end_time - self.start_time) * progress
 
         self.jump_to_time(int(target_time))
 
     def _apply_tournament_constraints(
-        self, matches: List[MatchData]
-    ) -> List[MatchData]:
+        self, matches: list[MatchData]
+    ) -> list[MatchData]:
         """Apply realistic tournament constraints to limit concurrent matches"""
         if not matches:
             return matches
 
         # Group matches by pool
-        pools: Dict[str, List[MatchData]] = {}
+        pools: dict[str, list[MatchData]] = {}
         for match in matches:
             pool_name = match.get("poolName") or "Unknown Pool"
             if pool_name not in pools:
                 pools[pool_name] = []
             pools[pool_name].append(match)
 
-        realistic_matches: List[MatchData] = []
+        realistic_matches: list[MatchData] = []
 
         # Check if we're near tournament start - show all initial matches
         tournament_start_threshold = self.start_time + 7200  # First 2 hours
@@ -278,8 +277,8 @@ class BracketSimulator:
         for pool_name, pool_matches in pools.items():
             # Sort matches by priority: In Progress > Ready > Waiting
             # Within each state, prefer matches that started earlier
-            def match_priority(match: MatchData) -> Tuple[int, int]:
-                state_priority: Dict[int, int] = {
+            def match_priority(match: MatchData) -> tuple[int, int]:
+                state_priority: dict[int, int] = {
                     MatchState.IN_PROGRESS: 0,
                     MatchState.READY: 1,
                     MatchState.WAITING: 2,
@@ -316,13 +315,13 @@ class BracketSimulator:
 
         return realistic_matches
 
-    def _get_available_matches(self) -> List[MatchData]:
+    def _get_available_matches(self) -> list[MatchData]:
         """Get matches that should be available at current simulation time based on bracket progression"""
         if not self.tournament_data:
             return []
 
-        completed_matches: Set[int] = set()
-        available_matches: List[MatchData] = []
+        completed_matches: set[int] = set()
+        available_matches: list[MatchData] = []
 
         # Find which matches have been completed by current simulation time
         for event in self.timeline_events:
@@ -420,7 +419,7 @@ class BracketSimulator:
                 )
 
                 # Determine match state based on simulation time and events
-                match_copy["state"] = self._determine_match_state(match_id, match_copy)
+                match_copy["state"] = self._determine_match_state(match_id)
 
                 # Set updatedAt to when the match became available in simulation
                 # This enables proper "time since ready" calculations
@@ -489,10 +488,10 @@ class BracketSimulator:
 
         return available_matches
 
-    def _determine_match_state(self, match_id: int, match_data: MatchData) -> int:
+    def _determine_match_state(self, match_id: int) -> int:
         """Determine the current state of a match based on simulation time"""
         # Check for events affecting this match up to current time
-        relevant_events: List[TimelineEvent] = [
+        relevant_events: list[TimelineEvent] = [
             e
             for e in self.timeline_events
             if e["match_id"] == match_id and e["timestamp"] <= self.current_time
@@ -516,9 +515,9 @@ class BracketSimulator:
 
         return MatchState.WAITING  # Default to waiting
 
-    def _build_dependency_graph(self) -> Dict[int, List[int]]:
+    def _build_dependency_graph(self) -> dict[int, list[int]]:
         """Build a graph of match dependencies - which matches depend on which other matches"""
-        dependencies: Dict[int, List[int]] = {}
+        dependencies: dict[int, list[int]] = {}
 
         if not self.tournament_data:
             return dependencies
@@ -562,11 +561,11 @@ class BracketSimulator:
     def _find_newly_available_matches(
         self,
         completed_match_id: int,
-        completed_matches: Set[int],
-        dependencies: Dict[int, List[int]],
-    ) -> List[MatchData]:
+        completed_matches: set[int],
+        dependencies: dict[int, list[int]],
+    ) -> list[MatchData]:
         """Find matches that become available after a match is completed"""
-        newly_available: List[MatchData] = []
+        newly_available: list[MatchData] = []
 
         if not self.tournament_data:
             return newly_available
@@ -599,12 +598,13 @@ class SimulatedTournamentAPI(TournamentAPI):
     """Drop-in replacement for TournamentAPI that uses simulated data"""
 
     simulator: BracketSimulator
-    event_name: Optional[str]
-    event_slug: Optional[str]
-    api_token: Optional[str]
-    event_id: Optional[str]
+    event_name: str | None
+    event_slug: str | None
+    api_token: str | None
+    event_id: str | None
 
     def __init__(self, simulator: BracketSimulator) -> None:
+        super().__init__()
         self.simulator = simulator
         self.event_name = None
         self.event_slug = None
@@ -614,23 +614,24 @@ class SimulatedTournamentAPI(TournamentAPI):
         # Initialize the simulation timeline
         if simulator.tournament_data:
             if not simulator.timeline_events:
-                simulator._build_timeline()
+                simulator.build_timeline()
             if simulator.timeline_events:
                 simulator.current_time = simulator.start_time
 
+    @override
     async def fetch_sets(self) -> TournamentState:
         """Return current simulated tournament state with gradual time progression"""
         if not self.simulator.tournament_data:
             log("❌ No tournament data in simulator")
-            return {
-                "event_name": "Simulation Error",
-                "tournament_name": "Error",
-                "sets": [],
-            }
+            return TournamentState(
+                event_name="Simulation Error",
+                tournament_name="Error",
+                sets=[],
+            )
 
         # Advance simulation time more gradually for realistic progression
         if self.simulator.timeline_events:
-            end_time = self.simulator.timeline_events[-1]["timestamp"]
+            end_time = self.simulator.timeline_events[-1].timestamp
 
             # Use speed multiplier for time advancement
             # Default: advance by 30 seconds of real time, scaled by speed multiplier
@@ -650,7 +651,7 @@ class SimulatedTournamentAPI(TournamentAPI):
         current_state = self.simulator.get_current_state()
 
         # Group matches by pools for better logging
-        pools: Dict[str, List[MatchData]] = {}
+        pools: dict[str, list[MatchData]] = {}
         for match in current_state["sets"]:
             pool_name = match.get("poolName") or "Unknown Pool"
             if pool_name not in pools:
@@ -661,10 +662,10 @@ class SimulatedTournamentAPI(TournamentAPI):
             f"📊 Simulator returning {len(current_state['sets'])} matches across {len(pools)} pools"
         )
         for pool_name, matches in pools.items():
-            states: Dict[str, int] = {}
+            states: dict[str, int] = {}
             for match in matches:
                 state = match["state"]
-                state_mapping: Dict[int, str] = {
+                state_mapping: dict[int, str] = {
                     MatchState.WAITING: "Waiting",
                     MatchState.READY: "Ready",
                     MatchState.IN_PROGRESS: "In Progress",
@@ -675,16 +676,17 @@ class SimulatedTournamentAPI(TournamentAPI):
 
         return current_state
 
-    def parse_api_response(self, data: Dict[str, Any]) -> TournamentState:
+    @override
+    def parse_api_response(self, data: dict[str, Any]) -> TournamentState:
         """Pass through - simulator already returns in correct format"""
         # The simulator already returns data in TournamentState format
-        # This is a type-safe way to convert Dict[str, Any] to TournamentState
-        return {
-            "event_name": data.get("event_name", ""),
-            "tournament_name": data.get("tournament_name", ""),
-            "sets": data.get("sets", []),
-        }
+        # This is a type-safe way to convert dict[str, Any] to TournamentState
+        return TournamentState(
+            event_name=data.get("event_name", ""),
+            tournament_name=data.get("tournament_name", ""),
+            sets=data.get("sets", []),
+        )
 
-    async def get_event_id_from_slug(self, event_slug: str) -> Optional[str]:
+    async def get_event_id_from_slug(self, event_slug: str) -> str | None:
         """Simulate event ID resolution"""
         return "999999"  # Dummy event ID

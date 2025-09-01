@@ -39,7 +39,7 @@ class TestDemoMode:
 
     def test_demo_mode_with_no_arguments(self):
         """Test that missing token/event automatically enables demo mode"""
-        test_args = []  # No arguments
+        test_args: list[str] = []  # No arguments
 
         with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
             "matchcaller.__main__.TournamentDisplay"

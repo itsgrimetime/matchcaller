@@ -5,22 +5,44 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any
 
 import aiohttp
+from pydantic import BaseModel
 
-from .logging import log
+from ..models.match import DictCompatibleBaseModel
+from ..utils.logging import log
+
+
+class TournamentMetadata(DictCompatibleBaseModel):
+    """Metadata about a tournament"""
+
+    event_slug: str
+    event_name: str
+    tournament_name: str
+    tournament_slug: str
+    cloned_at: int
+    total_matches: int
+
+
+class TournamentFile(DictCompatibleBaseModel):
+    """A file containing tournament data"""
+
+    filename: str
+    filepath: str
+    metadata: TournamentMetadata
+    duration_minutes: int
 
 
 class TournamentCloner:
     """Clone completed tournaments for simulation and testing"""
 
     def __init__(self, api_token: str):
-        self.api_token = api_token
-        self.data_dir = Path("simulator_data")
+        self.api_token: str = api_token
+        self.data_dir: Path = Path("simulator_data")
         self.data_dir.mkdir(exist_ok=True)
 
-    async def clone_tournament(self, event_slug: str) -> Optional[str]:
+    async def clone_tournament(self, event_slug: str) -> str | None:
         """
         Clone a tournament by fetching all historical data.
         Returns the filename of the saved data.
@@ -28,7 +50,7 @@ class TournamentCloner:
         log(f"🔄 Cloning tournament: {event_slug}")
 
         # Get event ID from slug
-        event_id = await self._get_event_id_from_slug(event_slug)
+        event_id: int | None = await self._get_event_id_from_slug(event_slug)
         if not event_id:
             log("❌ Could not resolve event ID from slug")
             return None
@@ -36,7 +58,9 @@ class TournamentCloner:
         log(f"✅ Event ID: {event_id}")
 
         # Fetch all tournament data (including completed matches)
-        tournament_data = await self._fetch_complete_tournament_data(event_id)
+        tournament_data: dict[str, Any] | None = (
+            await self._fetch_complete_tournament_data(event_id)
+        )
         if not tournament_data:
             log("❌ Failed to fetch tournament data")
             return None
@@ -58,7 +82,7 @@ class TournamentCloner:
 
         return str(filepath)
 
-    async def _get_event_id_from_slug(self, event_slug: str) -> Optional[int]:
+    async def _get_event_id_from_slug(self, event_slug: str) -> int | None:
         """Get event ID from slug"""
         query = """
         query EventBySlug($slug: String!) {
@@ -95,7 +119,9 @@ class TournamentCloner:
             log(f"❌ Error resolving slug: {e}")
             return None
 
-    async def _fetch_complete_tournament_data(self, event_id: int) -> Optional[Dict]:
+    async def _fetch_complete_tournament_data(
+        self, event_id: int
+    ) -> dict[str, Any] | None:
         """Fetch all match data including completed matches"""
         query = """
         query CompleteEventData($eventId: ID!, $page: Int!, $perPage: Int!) {
@@ -231,7 +257,9 @@ class TournamentCloner:
             log(f"❌ Error fetching tournament data: {e}")
             return None
 
-    def _process_for_simulation(self, tournament_data: Dict, event_slug: str) -> Dict:
+    def _process_for_simulation(
+        self, tournament_data: dict[str, Any], event_slug: str
+    ) -> dict[str, Any]:
         """Process raw tournament data into simulation format"""
         event_data = tournament_data["data"]["event"]
 
@@ -337,27 +365,35 @@ class TournamentCloner:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"tournament_{clean_slug}_{timestamp}.json"
 
-    def list_cloned_tournaments(self) -> List[Dict]:
+    def list_cloned_tournaments(self) -> list[TournamentFile]:
         """List all cloned tournaments"""
-        tournaments = []
+        tournaments: list[TournamentFile] = []
 
         for filepath in self.data_dir.glob("tournament_*.json"):
             try:
                 with open(filepath, "r") as f:
                     data = json.load(f)
 
-                tournaments.append(
-                    {
-                        "filename": filepath.name,
-                        "filepath": str(filepath),
-                        "metadata": data["metadata"],
-                        "duration_minutes": data["duration_minutes"],
-                    }
-                )
+                    metadata = TournamentMetadata(
+                        event_slug=data["metadata"]["event_slug"],
+                        event_name=data["metadata"]["event_name"],
+                        tournament_name=data["metadata"]["tournament_name"],
+                        tournament_slug=data["metadata"]["tournament_slug"],
+                        cloned_at=data["metadata"]["cloned_at"],
+                        total_matches=data["metadata"]["total_matches"],
+                    )
+                    tournaments.append(
+                        TournamentFile(
+                            filename=filepath.name,
+                            filepath=str(filepath),
+                            metadata=metadata,
+                            duration_minutes=data["duration_minutes"],
+                        )
+                    )
             except Exception as e:
                 log(f"⚠️  Could not read {filepath}: {e}")
 
         # Sort by clone date (newest first)
-        tournaments.sort(key=lambda t: t["metadata"].get("cloned_at", 0), reverse=True)
+        tournaments.sort(key=lambda t: t.metadata.cloned_at, reverse=True)
 
         return tournaments

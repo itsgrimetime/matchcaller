@@ -6,6 +6,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from matchcaller.matchcaller import TournamentDisplay, MatchRow
+from matchcaller.models.match import MatchData, PlayerData
 
 class StableTournamentDisplay(TournamentDisplay):
     """Tournament display with stable mock data for consistent snapshots"""
@@ -34,40 +35,40 @@ class StableTournamentDisplay(TournamentDisplay):
         
         # Create stable match data with fixed "time ready" displays
         stable_sets = [
-            {
-                "id": 1,
-                "displayName": "Winners Bracket - Round 1",
-                "player1": {"tag": "Alice"},
-                "player2": {"tag": "Bob"},
-                "state": 2,  # Ready
-                "updatedAt": 1640995200,
-                "startedAt": None
-            },
-            {
-                "id": 2,
-                "displayName": "Winners Bracket - Quarterfinals", 
-                "player1": {"tag": "Charlie"},
-                "player2": {"tag": "Dave"},
-                "state": 6,  # In progress
-                "updatedAt": 1640995200,
-                "startedAt": 1640995200
-            },
-            {
-                "id": 3,
-                "displayName": "Losers Bracket - Round 2",
-                "player1": {"tag": "Eve"},
-                "player2": {"tag": "Frank"},
-                "state": 1,  # Waiting
-                "updatedAt": 1640995200
-            },
-            {
-                "id": 4,
-                "displayName": "Grand Finals",
-                "player1": {"tag": "Winner A"},
-                "player2": {"tag": "Winner B"},
-                "state": 1,  # Waiting
-                "updatedAt": 1640995200
-            }
+            MatchData(
+                id=1,
+                displayName="Winners Bracket - Round 1",
+                player1=PlayerData(tag="Alice"),
+                player2=PlayerData(tag="Bob"),
+                state=2,  # Ready
+                updatedAt=1640995200,
+                startedAt=None
+            ),
+            MatchData(
+                id=2,
+                displayName="Winners Bracket - Quarterfinals",
+                player1=PlayerData(tag="Charlie"),
+                player2=PlayerData(tag="Dave"),
+                state=6,  # In progress
+                updatedAt=1640995200,
+                startedAt=1640995200
+            ),
+            MatchData(
+                id=3,
+                displayName="Losers Bracket - Round 2",
+                player1=PlayerData(tag="Eve"),
+                player2=PlayerData(tag="Frank"),
+                state=1,  # Waiting
+                updatedAt=1640995200
+            ),
+            MatchData(
+                id=4,
+                displayName="Grand Finals",
+                player1=PlayerData(tag="Winner A"),
+                player2=PlayerData(tag="Winner B"),
+                state=1,  # Waiting
+                updatedAt=1640995200
+            )
         ]
         
         # Create match objects with stable time displays

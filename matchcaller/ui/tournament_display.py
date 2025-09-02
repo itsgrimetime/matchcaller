@@ -1,8 +1,11 @@
 """Main tournament display TUI application."""
 
 import time
+from collections import defaultdict
 from datetime import datetime
-from typing import Optional, cast
+from typing import ClassVar, cast
+
+from textual.widget import Widget
 
 try:
     from textual import work
@@ -21,10 +24,12 @@ from ..models import MatchRow, MatchState
 from ..utils.logging import log, set_console_logging
 
 
-class TournamentDisplay(App):
+class TournamentDisplay(App[None]):
     """Main tournament display application"""
 
-    CSS = """
+    CSS: ClassVar[
+        str
+    ] = """
     Screen {
         layout: vertical;
     }
@@ -105,9 +110,9 @@ class TournamentDisplay(App):
 
     def __init__(
         self,
-        api_token: Optional[str] = None,
-        event_id: Optional[str] = None,
-        event_slug: Optional[str] = None,
+        api_token: str | None = None,
+        event_id: str | None = None,
+        event_slug: str | None = None,
         poll_interval: float = 30.0,
     ):
         super().__init__()
@@ -212,15 +217,15 @@ class TournamentDisplay(App):
                 f"{list(data.keys()) if isinstance(data, dict) else 'not a dict'}"
             )
 
-            self.event_name = cast(str, data["event_name"])
-            tournament_name = data.get("tournament_name", "Unknown Tournament")
+            self.event_name = data.event_name
+            tournament_name = data.tournament_name
             self.title = (
                 f"{tournament_name} - {self.event_name}"  # Update the header title
             )
             log(f"🔄 Event name set to: {self.event_name}")
             log(f"🔄 Tournament title set to: {self.title}")
 
-            self.matches = [MatchRow(set_data) for set_data in data["sets"]]
+            self.matches = [MatchRow(set_data) for set_data in data.sets]
             log(f"🔄 Created {len(self.matches)} match objects")
 
             self.total_sets = len(self.matches)
@@ -257,6 +262,75 @@ class TournamentDisplay(App):
             log(f"❌ Full traceback: {traceback.format_exc()}")
             # Keep existing data, just update timestamp to show we tried
             self.last_update = f"Error at {datetime.now().strftime('%H:%M:%S')}"
+            # Don't clear the display or change data - keep showing last successful state
+
+    def rebuild_table(
+        self,
+        pools: defaultdict[str, list[MatchRow]],
+        sorted_pools: list[str],
+        num_columns: int,
+        pools_container: Horizontal,
+    ) -> None:
+        # Create column containers
+        columns: list[Vertical] = []
+        for i in range(num_columns):
+            column: Vertical = Vertical(classes="pool-column", id=f"column-{i}")
+            columns.append(column)
+            pools_container.mount(column)
+
+        # Distribute pools across columns
+        for i, pool_name in enumerate(sorted_pools):
+            column_index = i % num_columns
+            column: Vertical = columns[column_index]
+            pool_matches: list[MatchRow] = pools[pool_name]
+            pool_id: str = f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
+
+            # Sort matches within each pool: In Progress first, then Ready, then Waiting
+            sorted_matches: list[MatchRow] = sorted(
+                pool_matches,
+                key=lambda m: (
+                    # Check if state 2 match has actually started
+                    (
+                        0
+                        if (m.state == MatchState.READY and m.started_at)
+                        else (
+                            1
+                            if m.state == MatchState.READY
+                            else 2 if m.state == MatchState.IN_PROGRESS else 3
+                        )
+                    ),  # Priority order
+                    -(m.updated_at or 0),  # Most recent first within each priority
+                ),
+            )
+
+            # Create a new DataTable for this pool
+            pool_table: DataTable[str] = DataTable(classes="pool-table")
+            pool_table.add_column("Match", width=28)
+            pool_table.add_column("Status", width=15)
+            pool_table.add_column("Duration", width=8)
+            pool_table.cursor_type = "row"
+
+            # Add matches to the pool table
+            for match in sorted_matches:
+                row_data: list[str] = [
+                    match.match_name,
+                    f"{match.status_icon} {match.status_text}",
+                    match.time_since_ready,
+                ]
+                pool_table.add_row(*row_data, key=str(match.id))
+
+            # Create pool section with title and table
+            pool_section = Vertical(
+                Static(pool_name or "Unknown Pool", classes="pool-title"),
+                pool_table,
+                classes="pool-section",
+                id=pool_id,
+            )
+
+            column.mount(pool_section)
+            log(
+                f"🔄 Added pool section: {pool_name} to column {column_index} with {len(sorted_matches)} matches"
+            )
 
     def update_table(self) -> None:
         """Update the matches display with vertical pool columns"""
@@ -279,10 +353,7 @@ class TournamentDisplay(App):
                 )
             return
 
-        # Group matches by pool
-        from collections import defaultdict
-
-        pools = defaultdict(list)
+        pools: defaultdict[str, list[MatchRow]] = defaultdict(list)
         for match in self.matches:
             pools[match.pool].append(match)
 
@@ -304,12 +375,13 @@ class TournamentDisplay(App):
 
         if rebuild_needed:
             log("🔄 Pool structure changed, rebuilding columns")
+            # Remove all children to clear existing widgets and avoid duplicate IDs
             pools_container.remove_children()
         else:
             log("🔄 Pool structure unchanged, updating existing tables")
 
         # Sort pools by name for consistent ordering
-        sorted_pools = sorted(key for key in pools.keys() if key is not None)
+        sorted_pools: list[str] = sorted(key for key in pools.keys())
 
         # Calculate number of columns based on number of pools
         num_pools = len(sorted_pools)
@@ -325,74 +397,15 @@ class TournamentDisplay(App):
         log(f"🔄 Organizing {num_pools} pools into {num_columns} columns")
 
         if rebuild_needed:
-            # Create column containers
-            columns = []
-            for i in range(num_columns):
-                column = Vertical(classes="pool-column", id=f"column-{i}")
-                columns.append(column)
-                pools_container.mount(column)
-
-            # Distribute pools across columns
-            for i, pool_name in enumerate(sorted_pools):
-                column_index = i % num_columns
-                column = columns[column_index]
-                pool_matches = pools[pool_name]
-                pool_id = f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
-
-                # Sort matches within each pool: In Progress first, then Ready, then Waiting
-                sorted_matches = sorted(
-                    pool_matches,
-                    key=lambda m: (
-                        # Check if state 2 match has actually started
-                        (
-                            0
-                            if (m.state == MatchState.READY and m.started_at)
-                            else (
-                                1
-                                if m.state == MatchState.READY
-                                else 2 if m.state == MatchState.IN_PROGRESS else 3
-                            )
-                        ),  # Priority order
-                        -(m.updated_at or 0),  # Most recent first within each priority
-                    ),
-                )
-
-                # Create a new DataTable for this pool
-                pool_table: DataTable = DataTable(classes="pool-table")
-                pool_table.add_column("Match", width=28)
-                pool_table.add_column("Status", width=15)
-                pool_table.add_column("Duration", width=8)
-                pool_table.cursor_type = "row"
-
-                # Add matches to the pool table
-                for match in sorted_matches:
-                    row_data = [
-                        match.match_name,
-                        f"{match.status_icon} {match.status_text}",
-                        match.time_since_ready,
-                    ]
-                    pool_table.add_row(*row_data, key=str(match.id))
-
-                # Create pool section with title and table
-                pool_section = Vertical(
-                    Static(pool_name or "Unknown Pool", classes="pool-title"),
-                    pool_table,
-                    classes="pool-section",
-                    id=pool_id,
-                )
-
-                column.mount(pool_section)
-                log(
-                    f"🔄 Added pool section: {pool_name} to column {column_index} with {len(sorted_matches)} matches"
-                )
+            self.rebuild_table(pools, sorted_pools, num_columns, pools_container)
         else:
             # Update existing pool tables
             for pool_name in sorted_pools:
-                pool_matches = pools[pool_name]
+                pool_matches: list[MatchRow] = pools[pool_name]
                 pool_id = f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
 
                 # Sort matches within each pool
-                sorted_matches = sorted(
+                sorted_matches: list[MatchRow] = sorted(
                     pool_matches,
                     key=lambda m: (
                         (
@@ -444,16 +457,16 @@ class TournamentDisplay(App):
             # Group matches by pool to match the UI structure
             from collections import defaultdict
 
-            pools = defaultdict(list)
+            pools: defaultdict[str, list[MatchRow]] = defaultdict(list)
             for match in self.matches:
                 pools[match.pool].append(match)
 
             for pool_name in sorted(key for key in pools.keys() if key is not None):
-                pool_matches = pools[pool_name]
+                pool_matches: list[MatchRow] = pools[pool_name]
                 pool_id = f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
 
                 # Sort matches same as update_table
-                sorted_matches = sorted(
+                sorted_matches: list[MatchRow] = sorted(
                     pool_matches,
                     key=lambda m: (
                         (
@@ -470,12 +483,12 @@ class TournamentDisplay(App):
                 )
 
                 try:
-                    pool_section = container.query_one(f"#{pool_id}")
-                    pool_table = pool_section.query_one(DataTable)
+                    pool_section: Widget = container.query_one(f"#{pool_id}")
+                    pools_table: DataTable[str] = pool_section.query_one(DataTable)
 
                     # Update just the duration column (column 3) for each match
                     for i, match in enumerate(sorted_matches):
-                        pool_table.update_cell_at(
+                        pools_table.update_cell_at(
                             Coordinate(i, 2), match.time_since_ready
                         )
 

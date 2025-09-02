@@ -8,11 +8,7 @@ import aiohttp
 
 from ..models.match import MatchData, PlayerData, TournamentState
 from ..models.mock_data import MOCK_TOURNAMENT_DATA
-from ..models.startgg_api import (
-    StartGGAPIResponse,
-    StartGGEventBySlugResponse,
-    StartGGEventSetsResponse,
-)
+from ..models.startgg_api import StartGGAPIResponse, StartGGEventSetsResponse
 from ..utils.logging import log
 
 
@@ -49,12 +45,22 @@ class TournamentAPI:
             self.event_id = await self.get_event_id_from_slug(self.event_slug)
             if not self.event_id:
                 log("❌ Could not get event ID from slug")
-                return MOCK_TOURNAMENT_DATA
+                if not self.api_token:
+                    return MOCK_TOURNAMENT_DATA
+                else:
+                    raise Exception(
+                        "Could not resolve event ID from slug - check if slug is correct"
+                    )
             log(f"✅ Got event ID: {self.event_id}")
 
         if not self.event_id:
             log("⚠️  Missing event ID - using mock data")
-            return MOCK_TOURNAMENT_DATA
+            if not self.api_token:
+                return MOCK_TOURNAMENT_DATA
+            else:
+                raise Exception(
+                    "Missing event ID - provide either event_id or event_slug parameter"
+                )
 
         # Simplified start.gg GraphQL query - filter for active matches only
         query = """
@@ -208,9 +214,16 @@ class TournamentAPI:
 
         except Exception as e:
             log(f"❌ API Error: {type(e).__name__}: {e}")
-            log("🔄 Falling back to mock data...")
-            # Return mock data on error so the display still works
-            return MOCK_TOURNAMENT_DATA
+            # Only fall back to mock data if no API token was provided
+            # If the user provided an API token, they want real data - don't show mock
+            if not self.api_token:
+                log("🔄 Falling back to mock data (no API token provided)...")
+                return MOCK_TOURNAMENT_DATA
+            else:
+                log(
+                    "🔄 No fallback to mock data - re-raising exception to preserve existing display"
+                )
+                raise e
 
     def parse_api_response(self, api_response: StartGGAPIResponse) -> TournamentState:
         """Parse the start.gg API response into our format"""
@@ -318,11 +331,9 @@ class TournamentAPI:
                     startedAt=set_data.startedAt,
                     entrant1_source=None,
                     entrant2_source=None,
-                    station=(
-                        str(set_data.station.number) if set_data.station else None
-                    ),
+                    station=set_data.station.number if set_data.station else None,
                     stream=(set_data.stream.streamName if set_data.stream else None),
-                    _simulation_context=None,
+                    simulation_context=None,
                 )
                 parsed_sets.append(parsed_set)
                 log(
@@ -343,7 +354,11 @@ class TournamentAPI:
 
         except Exception as e:
             log(f"❌ Error parsing API response: {e}")
-            return MOCK_TOURNAMENT_DATA
+            # Only fall back to mock data if no API token was provided
+            if not self.api_token:
+                return MOCK_TOURNAMENT_DATA
+            else:
+                raise e
 
     async def get_event_id_from_slug(self, event_slug: str) -> str | None:
         """Get event ID from event slug (e.g., 'tournament/the-c-stick-55/event/melee-singles')"""
@@ -356,7 +371,7 @@ class TournamentAPI:
 
         log(f"🔍 Using event slug: {event_slug}")
         query = """
-        query GetEvent($slug: String!) {
+        query getEventId($slug: String) {
             event(slug: $slug) {
                 id
                 name
@@ -396,15 +411,16 @@ class TournamentAPI:
                         log(f"❌ Pydantic validation error for event ID: {e}")
                         return None
 
+                    log(f"🔍 API response: {api_response}")
+
                     if api_response.errors:
                         log(
                             f"❌ GraphQL Errors getting event ID: {api_response.errors}"
                         )
                         return None
 
-                    if not api_response.data or not isinstance(
-                        api_response.data, StartGGEventBySlugResponse
-                    ):
+                    # Both response types have the same event structure for our needs
+                    if not api_response.data or not hasattr(api_response.data, "event"):
                         log("❌ Invalid response structure for event lookup")
                         return None
 

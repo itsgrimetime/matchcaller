@@ -2,9 +2,8 @@
 
 import time
 from enum import IntEnum
-from typing import Optional
+from typing import Any
 
-from typing import Any, Dict
 from pydantic import BaseModel
 
 
@@ -41,30 +40,28 @@ class PlayerData(DictCompatibleBaseModel):
     """Player information"""
 
     tag: str
-    id: Optional[int] = None
-
+    id: int | None = None
 
 
 class EntrantSource(DictCompatibleBaseModel):
     """Source information for tournament entrants (used for bracket dependencies)"""
 
     type: str
-    typeId: Optional[str | int] = None
-
+    typeId: str | int | None = None
 
 
 class MatchData(DictCompatibleBaseModel):
     """Complete match/set data structure that works for both API and simulation"""
 
     # Core identifiers
-    id: int
+    id: str | int
 
     # Display information
-    display_name: Optional[str] = None
-    displayName: Optional[str] = None
-    poolName: Optional[str] = None
-    phase_group: Optional[str] = None
-    phase_name: Optional[str] = None
+    display_name: str | None = None
+    displayName: str | None = None
+    poolName: str | None = None
+    phase_group: str | None = None
+    phase_name: str | None = None
 
     # Players
     player1: PlayerData
@@ -74,24 +71,23 @@ class MatchData(DictCompatibleBaseModel):
     state: int
 
     # Timestamps (both formats for compatibility)
-    created_at: Optional[int] = None
-    started_at: Optional[int] = None
-    completed_at: Optional[int] = None
-    updated_at: Optional[int] = None
-    updatedAt: Optional[int] = None
-    startedAt: Optional[int] = None
+    created_at: int | None = None
+    started_at: int | None = None
+    completed_at: int | None = None
+    updated_at: int | None = None
+    updatedAt: int | None = None
+    startedAt: int | None = None
 
     # Bracket dependencies (for simulation)
-    entrant1_source: Optional[EntrantSource] = None
-    entrant2_source: Optional[EntrantSource] = None
+    entrant1_source: EntrantSource | None = None
+    entrant2_source: EntrantSource | None = None
 
     # Station/stream information
-    station: Optional[str] = None
-    stream: Optional[str] = None
+    station: int | None = None
+    stream: str | None = None
 
     # Simulation context
-    _simulation_context: Optional[dict[str, int]] = None
-
+    simulation_context: dict[str, int] | None = None
 
 
 # Alias for backward compatibility
@@ -106,7 +102,6 @@ class TournamentMetadata(DictCompatibleBaseModel):
     total_matches: int
 
 
-
 class TournamentData(DictCompatibleBaseModel):
     """Tournament data structure for simulation files"""
 
@@ -115,14 +110,12 @@ class TournamentData(DictCompatibleBaseModel):
     duration_minutes: int
 
 
-
 class TournamentState(DictCompatibleBaseModel):
     """Tournament state as returned by API or simulator"""
 
     event_name: str
     tournament_name: str
     sets: list[MatchData]
-
 
 
 class TimelineEvent(DictCompatibleBaseModel):
@@ -135,7 +128,6 @@ class TimelineEvent(DictCompatibleBaseModel):
     match: MatchData
 
 
-
 class SimulationProgress(DictCompatibleBaseModel):
     """Simulation progress information"""
 
@@ -145,7 +137,6 @@ class SimulationProgress(DictCompatibleBaseModel):
     end_time: int
     current_time_str: str
     active_matches: int
-
 
 
 class MatchRow:
@@ -168,20 +159,22 @@ class MatchRow:
     }
 
     def __init__(self, set_data: MatchData):
-        self.id = set_data.id
-        self.bracket = set_data.displayName or set_data.display_name or "Unknown Match"
-        self.pool = set_data.poolName or "Unknown Pool"
-        self.player1 = set_data.player1.tag if set_data.player1 else "TBD"
-        self.player2 = set_data.player2.tag if set_data.player2 else "TBD"
-        self.state = set_data.state
+        self.id: int | str = set_data.id
+        self.bracket: str = (
+            set_data.displayName or set_data.display_name or "Unknown Match"
+        )
+        self.pool: str = set_data.poolName or "Unknown Pool"
+        self.player1: str = set_data.player1.tag if set_data.player1 else "TBD"
+        self.player2: str = set_data.player2.tag if set_data.player2 else "TBD"
+        self.state: int = set_data.state
         # Try both timestamp formats for compatibility
-        self.updated_at = set_data.updatedAt or set_data.updated_at or 0
-        self.started_at = set_data.startedAt or set_data.started_at
-        self.station = set_data.station
-        self.stream = set_data.stream
+        self.updated_at: int = set_data.updatedAt or set_data.updated_at or 0
+        self.started_at: int | None = set_data.startedAt or set_data.started_at
+        self.station: int | None = set_data.station
+        self.stream: str | None = set_data.stream
 
         # Store simulation context for normalized time calculations
-        self._simulation_context = set_data._simulation_context
+        self.simulation_context: dict[str, int] | None = set_data.simulation_context
 
     @property
     def status_icon(self) -> str:
@@ -217,9 +210,9 @@ class MatchRow:
     def time_since_ready(self) -> str:
         """Calculate time since match became ready, started, or was last updated"""
         # Use simulation time if available, otherwise use real time
-        if self._simulation_context and self._simulation_context.get("is_simulation"):
-            now = self._simulation_context["current_time"]
-            start_time = self._simulation_context["start_time"]
+        if self.simulation_context and self.simulation_context.get("is_simulation"):
+            now = self.simulation_context["current_time"]
+            start_time = self.simulation_context["start_time"]
         else:
             now = int(time.time())
             start_time = None

@@ -30,6 +30,7 @@
   "reportIncompatibleMethodOverride": true,
   "reportIncompatibleVariableOverride": true,
   "reportInconsistentConstructor": true,
+  "reportInvalidCast": true,
   "strictListInference": true,
   "strictDictionaryInference": true,
   "strictSetInference": true,

@@ -82,10 +82,10 @@ class TestTournamentDisplay:
         with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = {
                 "event_name": "Test Event",
-                "tournament_name": "Test Tournament", 
-                "sets": []
+                "tournament_name": "Test Tournament",
+                "sets": [],
             }
-            
+
             async with app.run_test() as pilot:
                 await pilot.pause(0.1)
 
@@ -134,10 +134,10 @@ class TestTournamentDisplay:
 
         with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = mock_api_data
-            
+
             async with app.run_test() as pilot:
                 # Wait for initial mount and data fetch to complete
-                await pilot.pause(2.0)
+                await pilot.pause(1.0)
 
                 # Check that display was updated
                 assert app.event_name == "Test Tournament Live"
@@ -184,7 +184,7 @@ class TestTournamentDisplay:
 
         with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = test_data
-            
+
             async with app.run_test() as pilot:
                 await pilot.pause(2.0)  # Wait for initial fetch
 
@@ -195,10 +195,16 @@ class TestTournamentDisplay:
                 assert len(app.matches) == 3
                 # Tables are created dynamically based on pool structure
                 # Verify that matches are sorted correctly by checking the matches list
-                in_progress_matches = [m for m in app.matches if m.state == 6 or (m.state == 2 and m.started_at)]
-                ready_matches = [m for m in app.matches if m.state == 2 and not m.started_at]
+                in_progress_matches = [
+                    m
+                    for m in app.matches
+                    if m.state == 6 or (m.state == 2 and m.started_at)
+                ]
+                ready_matches = [
+                    m for m in app.matches if m.state == 2 and not m.started_at
+                ]
                 waiting_matches = [m for m in app.matches if m.state == 1]
-                
+
                 assert len(in_progress_matches) == 1
                 assert len(ready_matches) == 1
                 assert len(waiting_matches) == 1
@@ -237,13 +243,13 @@ class TestTournamentDisplay:
         with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
             # First call succeeds with mock data
             mock_fetch.return_value = MOCK_TOURNAMENT_DATA
-            
+
             async with app.run_test() as pilot:
                 await pilot.pause(1.0)
-                
+
                 # Second call fails
                 mock_fetch.side_effect = Exception("API Error")
-                
+
                 # Manually trigger another fetch (action_refresh is not async)
                 app.action_refresh()
                 await pilot.pause(1.0)
@@ -279,8 +285,12 @@ class TestTournamentDisplayKeyBindings:
         app = TournamentDisplay()
 
         with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = {"event_name": "Test", "tournament_name": "Test", "sets": []}
-            
+            mock_fetch.return_value = {
+                "event_name": "Test",
+                "tournament_name": "Test",
+                "sets": [],
+            }
+
             async with app.run_test() as pilot:
                 await pilot.pause(0.1)
 

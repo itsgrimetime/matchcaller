@@ -8,7 +8,6 @@ import argparse
 import asyncio
 import sys
 import time
-from typing import Any
 
 from ..models.match import TournamentState
 

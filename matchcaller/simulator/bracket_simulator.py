@@ -9,6 +9,7 @@ from typing import Any, Callable
 from typing_extensions import override
 
 from ..api.tournament_api import TournamentAPI
+from ..models.startgg_api import StartGGAPIResponse
 from ..models.match import (
     MatchData,
     MatchState,
@@ -677,15 +678,9 @@ class SimulatedTournamentAPI(TournamentAPI):
         return current_state
 
     @override
-    def parse_api_response(self, data: dict[str, Any]) -> TournamentState:
-        """Pass through - simulator already returns in correct format"""
-        # The simulator already returns data in TournamentState format
-        # This is a type-safe way to convert dict[str, Any] to TournamentState
-        return TournamentState(
-            event_name=data.get("event_name", ""),
-            tournament_name=data.get("tournament_name", ""),
-            sets=data.get("sets", []),
-        )
+    def parse_api_response(self, api_response: StartGGAPIResponse) -> TournamentState:
+        """This method should not be called in simulation mode"""
+        raise NotImplementedError("SimulatedTournamentAPI does not parse API responses - it generates its own data")
 
     async def get_event_id_from_slug(self, event_slug: str) -> str | None:
         """Simulate event ID resolution"""

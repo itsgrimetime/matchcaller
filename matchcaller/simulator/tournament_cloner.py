@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp
-from pydantic import BaseModel
 
 from ..models.match import DictCompatibleBaseModel
 from ..utils.logging import log

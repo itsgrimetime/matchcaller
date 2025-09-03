@@ -32,7 +32,7 @@ MOCK_TOURNAMENT_DATA: TournamentState = TournamentState(
             entrant2_source=None,
             station=None,
             stream=None,
-            _simulation_context=None,
+            simulation_context=None,
         ),
         MatchData(
             id=2,
@@ -54,7 +54,7 @@ MOCK_TOURNAMENT_DATA: TournamentState = TournamentState(
             entrant2_source=None,
             station=None,
             stream=None,
-            _simulation_context=None,
+            simulation_context=None,
         ),
         MatchData(
             id=3,
@@ -76,7 +76,7 @@ MOCK_TOURNAMENT_DATA: TournamentState = TournamentState(
             entrant2_source=None,
             station=None,
             stream=None,
-            _simulation_context=None,
+            simulation_context=None,
         ),
         MatchData(
             id=4,
@@ -98,7 +98,7 @@ MOCK_TOURNAMENT_DATA: TournamentState = TournamentState(
             entrant2_source=None,
             station=None,
             stream=None,
-            _simulation_context=None,
+            simulation_context=None,
         ),
     ],
 )

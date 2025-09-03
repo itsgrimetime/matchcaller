@@ -17,7 +17,7 @@ def create_test_match_data(
     state: int = 2,
     updatedAt: Optional[int] = None,
     startedAt: Optional[int] = None,
-    station: Optional[str] = None,
+    station: Optional[int] = None,
     stream: Optional[str] = None,
     poolName: str = "Test Pool",
     **kwargs: Any
@@ -120,7 +120,7 @@ class TestMatchRow:
 
     def test_status_text_with_station(self):
         """Test status text includes station information"""
-        set_data = create_test_match_data(state=2, station="3")
+        set_data = create_test_match_data(state=2, station=3)
         match = MatchRow(set_data)
         assert "Station 3" in match.status_text
 

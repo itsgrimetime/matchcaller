@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import ClassVar, cast
 
+from textual.binding import BindingType
 from textual.widget import Widget
 
 try:
@@ -96,7 +97,7 @@ class TournamentDisplay(App[None]):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         ("r", "refresh", "Refresh"),
         ("q", "quit", "Quit"),
     ]
@@ -120,7 +121,7 @@ class TournamentDisplay(App[None]):
         self.matches: list[MatchRow] = []
         # Set initial title - will be updated when tournament data is loaded
         self.title = "Loading Tournament..."
-        self.poll_interval = poll_interval
+        self.poll_interval: float = poll_interval
         log(
             "🎯 TournamentDisplay initialized with token: "
             f"{'***' + api_token[-4:] if api_token else 'None'}, "
@@ -274,9 +275,9 @@ class TournamentDisplay(App[None]):
         # Create column containers
         columns: list[Vertical] = []
         for i in range(num_columns):
-            column: Vertical = Vertical(classes="pool-column", id=f"column-{i}")
-            columns.append(column)
-            pools_container.mount(column)
+            new_column: Vertical = Vertical(classes="pool-column", id=f"column-{i}")
+            columns.append(new_column)
+            pools_container.mount(new_column)
 
         # Distribute pools across columns
         for i, pool_name in enumerate(sorted_pools):

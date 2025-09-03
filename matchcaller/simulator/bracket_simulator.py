@@ -9,7 +9,6 @@ from typing import Any, Callable
 from typing_extensions import override
 
 from ..api.tournament_api import TournamentAPI
-from ..models.startgg_api import StartGGAPIResponse
 from ..models.match import (
     MatchData,
     MatchState,
@@ -18,6 +17,7 @@ from ..models.match import (
     TournamentData,
     TournamentState,
 )
+from ..models.startgg_api import StartGGAPIResponse
 from ..utils.logging import log
 
 
@@ -284,9 +284,11 @@ class BracketSimulator:
                     MatchState.READY: 1,
                     MatchState.WAITING: 2,
                 }  # In Progress, Ready, Waiting
+                if match.player1.tag == "TBD" or match.player2.tag == "TBD":
+                    return (3, 0)
                 return (
-                    state_priority.get(match["state"], 3),
-                    match.get("updatedAt") or 0,
+                    state_priority.get(match.state, 3),
+                    match.updatedAt or 0,
                 )
 
             pool_matches.sort(key=match_priority)
@@ -680,7 +682,9 @@ class SimulatedTournamentAPI(TournamentAPI):
     @override
     def parse_api_response(self, api_response: StartGGAPIResponse) -> TournamentState:
         """This method should not be called in simulation mode"""
-        raise NotImplementedError("SimulatedTournamentAPI does not parse API responses - it generates its own data")
+        raise NotImplementedError(
+            "SimulatedTournamentAPI does not parse API responses - it generates its own data"
+        )
 
     async def get_event_id_from_slug(self, event_slug: str) -> str | None:
         """Simulate event ID resolution"""

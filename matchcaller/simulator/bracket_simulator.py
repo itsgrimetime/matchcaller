@@ -276,7 +276,7 @@ class BracketSimulator:
         is_tournament_start = self.current_time <= tournament_start_threshold
 
         for pool_name, pool_matches in pools.items():
-            # Sort matches by priority: In Progress > Ready > Waiting
+            # Sort matches by priority: In Progress > Ready > Waiting > TBD
             # Within each state, prefer matches that started earlier
             def match_priority(match: MatchData) -> tuple[int, int]:
                 state_priority: dict[int, int] = {
@@ -284,7 +284,7 @@ class BracketSimulator:
                     MatchState.READY: 1,
                     MatchState.WAITING: 2,
                 }  # In Progress, Ready, Waiting
-                if match.player1.tag == "TBD" or match.player2.tag == "TBD":
+                if not match.player1.tag or not match.player2.tag:
                     return (3, 0)
                 return (
                     state_priority.get(match.state, 3),

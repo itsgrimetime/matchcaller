@@ -204,7 +204,24 @@ class MatchRow:
 
     @property
     def match_name(self) -> str:
-        return f"{self.player1} vs {self.player2}"
+        """Return normalized match name with TBD players at the end"""
+        # Normalize TBD matches to always show <player> vs TBD
+        if self.player1 == "TBD" and self.player2 != "TBD":
+            return f"{self.player2} vs TBD"
+        elif self.player1 == "" and self.player2 != "" and self.player2 != "TBD":
+            return f"{self.player2} vs TBD"
+        elif self.player2 == "" and self.player1 != "" and self.player1 != "TBD":
+            return f"{self.player1} vs TBD"
+        else:
+            return f"{self.player1} vs {self.player2}"
+
+    @property
+    def has_tbd_player(self) -> bool:
+        """Check if match has any TBD or empty players"""
+        return (
+            self.player1 == "TBD" or self.player1 == "" or 
+            self.player2 == "TBD" or self.player2 == ""
+        )
 
     @property
     def time_since_ready(self) -> str:

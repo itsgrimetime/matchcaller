@@ -3,9 +3,9 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from textual.widgets import DataTable, Label
 
 from matchcaller.matchcaller import MOCK_TOURNAMENT_DATA, TournamentDisplay
+from matchcaller.models.match import TournamentState, MatchData, PlayerData
 
 
 # @pytest.mark.skip("UI tests require full TUI instantiation which triggers async event loops and network calls in test environment. These tests should be run manually or in a dedicated UI testing environment.")
@@ -80,11 +80,11 @@ class TestTournamentDisplay:
 
         # Mock the worker method properly
         with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = {
-                "event_name": "Test Event",
-                "tournament_name": "Test Tournament",
-                "sets": [],
-            }
+            mock_fetch.return_value = TournamentState(
+                event_name="Test Event",
+                tournament_name="Test Tournament",
+                sets=[],
+            )
 
             async with app.run_test() as pilot:
                 await pilot.pause(0.1)
@@ -114,21 +114,21 @@ class TestTournamentDisplay:
     async def test_api_data_updates_display(self):
         """Test that API data updates are reflected in the display"""
         # Mock successful API response
-        mock_api_data = {
-            "event_name": "Test Tournament Live",
-            "tournament_name": "Test Tournament",
-            "sets": [
-                {
-                    "id": 999,
-                    "displayName": "Grand Finals",
-                    "player1": {"tag": "Champion1"},
-                    "player2": {"tag": "Champion2"},
-                    "state": 2,
-                    "updatedAt": 1640995200,
-                    "startedAt": None,
-                }
+        mock_api_data = TournamentState(
+            event_name="Test Tournament Live",
+            tournament_name="Test Tournament",
+            sets=[
+                MatchData(
+                    id=999,
+                    displayName="Grand Finals",
+                    player1=PlayerData(tag="Champion1"),
+                    player2=PlayerData(tag="Champion2"),
+                    state=2,
+                    updatedAt=1640995200,
+                    startedAt=None,
+                )
             ],
-        }
+        )
 
         app = TournamentDisplay(api_token="test_token", event_id="12345")
 
@@ -137,7 +137,7 @@ class TestTournamentDisplay:
 
             async with app.run_test() as pilot:
                 # Wait for initial mount and data fetch to complete
-                await pilot.pause(1.0)
+                await pilot.pause(3.0)  # Wait longer for async worker to complete
 
                 # Check that display was updated
                 assert app.event_name == "Test Tournament Live"
@@ -151,48 +151,67 @@ class TestTournamentDisplay:
         app = TournamentDisplay()
 
         # Create test data with different states
-        test_data = {
-            "event_name": "Test Event",
-            "sets": [
-                {
-                    "id": 1,
-                    "displayName": "Waiting Match",
-                    "player1": {"tag": "Player1"},
-                    "player2": {"tag": "Player2"},
-                    "state": 1,  # Waiting
-                    "updatedAt": 1640995200,
-                },
-                {
-                    "id": 2,
-                    "displayName": "In Progress Match",
-                    "player1": {"tag": "Player3"},
-                    "player2": {"tag": "Player4"},
-                    "state": 6,  # In Progress
-                    "updatedAt": 1640995300,
-                },
-                {
-                    "id": 3,
-                    "displayName": "Ready Match",
-                    "player1": {"tag": "Player5"},
-                    "player2": {"tag": "Player6"},
-                    "state": 2,  # Ready
-                    "updatedAt": 1640995400,
-                    "startedAt": None,
-                },
+        test_data = TournamentState(
+            event_name="Test Event",
+            tournament_name="Test Tournament",
+            sets=[
+                MatchData(
+                    id=1,
+                    displayName="Waiting Match",
+                    player1=PlayerData(tag="Player1"),
+                    player2=PlayerData(tag="Player2"),
+                    state=1,  # Waiting
+                    updatedAt=1640995200,
+                ),
+                MatchData(
+                    id=2,
+                    displayName="In Progress Match",
+                    player1=PlayerData(tag="Player3"),
+                    player2=PlayerData(tag="Player4"),
+                    state=6,  # In Progress
+                    updatedAt=1640995300,
+                ),
+                MatchData(
+                    id=3,
+                    displayName="Ready Match",
+                    player1=PlayerData(tag="Player5"),
+                    player2=PlayerData(tag="Player6"),
+                    state=2,  # Ready
+                    updatedAt=1640995400,
+                    startedAt=None,
+                ),
+                MatchData(
+                    id=4,
+                    displayName="Match w/ TBD",
+                    player1=PlayerData(tag="TBD"),
+                    player2=PlayerData(tag="Player1"),
+                    state=1,  # Waiting
+                    updatedAt=1640995500,
+                    startedAt=None,
+                ),
+                MatchData(
+                    id=5,
+                    displayName="Match w/ empty tag",
+                    player1=PlayerData(tag=""),
+                    player2=PlayerData(tag="Player2"),
+                    state=1,  # Waiting
+                    updatedAt=1640995600,
+                    startedAt=None,
+                ),
             ],
-        }
+        )
 
         with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = test_data
 
             async with app.run_test() as pilot:
-                await pilot.pause(2.0)  # Wait for initial fetch
+                await pilot.pause(3.0)  # Wait longer for async worker to complete
 
                 # Removed table query - tables are created dynamically
 
                 # Check that data was loaded
-                assert app.total_sets == 3
-                assert len(app.matches) == 3
+                assert app.total_sets == 5
+                assert len(app.matches) == 5
                 # Tables are created dynamically based on pool structure
                 # Verify that matches are sorted correctly by checking the matches list
                 in_progress_matches = [
@@ -203,11 +222,31 @@ class TestTournamentDisplay:
                 ready_matches = [
                     m for m in app.matches if m.state == 2 and not m.started_at
                 ]
-                waiting_matches = [m for m in app.matches if m.state == 1]
+                waiting_matches = [
+                    m
+                    for m in app.matches
+                    if m.state == 1
+                    and m.player1 != "TBD"
+                    and m.player2 != ""
+                    and m.player1 != ""
+                    and m.player2 != "TBD"
+                ]
+                tbd_matches = [
+                    m
+                    for m in app.matches
+                    if m.state == 1 and (m.player1 == "TBD" or m.player2 == "TBD")
+                ]
+                empty_tag_matches = [
+                    m
+                    for m in app.matches
+                    if m.state == 1 and (m.player1 == "" or m.player2 == "")
+                ]
 
                 assert len(in_progress_matches) == 1
                 assert len(ready_matches) == 1
                 assert len(waiting_matches) == 1
+                assert len(tbd_matches) == 1
+                assert len(empty_tag_matches) == 1
 
     @pytest.mark.asyncio
     async def test_info_line_displays_correct_stats(self):
@@ -285,11 +324,11 @@ class TestTournamentDisplayKeyBindings:
         app = TournamentDisplay()
 
         with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = {
-                "event_name": "Test",
-                "tournament_name": "Test",
-                "sets": [],
-            }
+            mock_fetch.return_value = TournamentState(
+                event_name="Test",
+                tournament_name="Test",
+                sets=[],
+            )
 
             async with app.run_test() as pilot:
                 await pilot.pause(0.1)

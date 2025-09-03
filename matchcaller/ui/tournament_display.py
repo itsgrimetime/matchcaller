@@ -272,6 +272,9 @@ class TournamentDisplay(App[None]):
         num_columns: int,
         pools_container: Horizontal,
     ) -> None:
+        # Ensure container is clear before rebuilding to avoid duplicate IDs
+        pools_container.remove_children()
+
         # Create column containers
         columns: list[Vertical] = []
         for i in range(num_columns):
@@ -307,8 +310,8 @@ class TournamentDisplay(App[None]):
             # Create a new DataTable for this pool
             pool_table: DataTable[str] = DataTable(classes="pool-table")
             pool_table.add_column("Match", width=28)
-            pool_table.add_column("Status", width=15)
-            pool_table.add_column("Duration", width=8)
+            pool_table.add_column("Status", width=14)
+            pool_table.add_column("Duration", width=10)
             pool_table.cursor_type = "row"
 
             # Add matches to the pool table

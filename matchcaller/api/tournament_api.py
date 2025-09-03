@@ -308,7 +308,7 @@ class TournamentAPI:
                     bracket_name += f" - Round {set_data.round}"
 
                 # Skip matches where both players are TBD (not yet determined)
-                if player1_name == "TBD" or player2_name == "TBD":
+                if player1_name == "TBD" and player2_name == "TBD":
                     skipped_tbd_count += 1
                     log(f"⏭️  Skipping TBD match: {player1_name} vs {player2_name}")
                     continue

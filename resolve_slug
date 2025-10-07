@@ -1,0 +1,6 @@
+#!/bin/bash
+# Resolve start.gg short URL to tournament slug
+# Usage: ./resolve_slug <short_url>
+# Example: ./resolve_slug abbey
+
+python -m matchcaller.utils.resolve "$@"

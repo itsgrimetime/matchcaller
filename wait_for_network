@@ -1,0 +1,30 @@
+#!/bin/bash
+# Wait for network connectivity before proceeding
+# Usage: ./wait_for_network [timeout_seconds]
+
+TIMEOUT=${1:-60}  # Default 60 seconds
+ELAPSED=0
+INTERVAL=2
+
+echo "Waiting for network connectivity..."
+
+while [ $ELAPSED -lt $TIMEOUT ]; do
+    # Try to ping a reliable host (Google DNS)
+    if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
+        echo "Network connected after ${ELAPSED}s"
+        exit 0
+    fi
+
+    # Also check if we can reach start.gg specifically
+    if ping -c 1 -W 1 start.gg >/dev/null 2>&1; then
+        echo "Network connected (start.gg reachable) after ${ELAPSED}s"
+        exit 0
+    fi
+
+    echo "Waiting for network... (${ELAPSED}s/${TIMEOUT}s)"
+    sleep $INTERVAL
+    ELAPSED=$((ELAPSED + INTERVAL))
+done
+
+echo "Network connection timeout after ${TIMEOUT}s"
+exit 1

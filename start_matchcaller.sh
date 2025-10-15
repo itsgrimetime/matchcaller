@@ -5,7 +5,7 @@
 set -e  # Exit on error
 
 # Configuration
-MATCHCALLER_DIR="/home/pi/matchcaller"
+MATCHCALLER_DIR="/home/abbey/matchcaller"
 SHORT_URL="abbey"
 EVENT_TYPE="singles"
 NETWORK_TIMEOUT=120  # 2 minutes
@@ -20,6 +20,11 @@ fi
 
 # Navigate to matchcaller directory
 cd "$MATCHCALLER_DIR"
+# Activate virtual environment if it exists
+if [ -d "/home/abbey/matchcaller-venv" ]; then
+    source "/home/abbey/matchcaller-venv/bin/activate"
+fi
+
 
 echo "================================================"
 echo "MatchCaller Tournament Display"

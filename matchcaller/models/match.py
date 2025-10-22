@@ -207,13 +207,13 @@ class MatchRow:
         """Return normalized match name with TBD players at the end"""
         # Normalize TBD matches to always show <player> vs TBD
         if self.player1 == "TBD" and self.player2 != "TBD":
-            return f"{self.player2} vs TBD"
+            return f"{self.player2[:12]} vs TBD"
         elif self.player1 == "" and self.player2 != "" and self.player2 != "TBD":
-            return f"{self.player2} vs TBD"
+            return f"{self.player2[:24]} vs TBD"
         elif self.player2 == "" and self.player1 != "" and self.player1 != "TBD":
-            return f"{self.player1} vs TBD"
+            return f"{self.player1[:24]} vs TBD"
         else:
-            return f"{self.player1} vs {self.player2}"
+            return f"{self.player1[:12]} vs {self.player2[:12]}"
 
     @property
     def has_tbd_player(self) -> bool:

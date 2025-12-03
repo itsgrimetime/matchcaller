@@ -23,6 +23,27 @@ from ..api import TournamentAPI
 from ..models import MatchRow, MatchState
 from ..utils.logging import log, set_console_logging
 
+from textual.theme import Theme
+
+halloween_theme = Theme(
+    name="halloween",
+    primary="#ff6b35",
+    secondary="#8b5cf6",
+    accent="#10b981",
+    foreground="#f5f5dc",
+    background="#1a0f1f",
+    success="#10b981",
+    warning="#f59e0b",
+    error="#dc2626",
+    surface="#2d1b3d",
+    panel="#3d2750",
+    dark=True,
+)
+
+# Register in your App's on_mount method:
+# def on_mount(self) -> None:
+#     self.register_theme(halloween_theme)
+#     self.theme = "halloween"
 
 class TournamentDisplay(App[None]):
     """Main tournament display application"""
@@ -139,6 +160,10 @@ class TournamentDisplay(App[None]):
     def on_mount(self) -> None:
         """Initialize the app"""
         # Disable console logging when TUI starts
+
+        # self.register_theme(halloween_theme)
+        # self.theme = "halloween"
+
         set_console_logging(False)
 
         log("🏁 on_mount() called")

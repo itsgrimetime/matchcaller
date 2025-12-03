@@ -29,12 +29,15 @@ def main():
     short_url = sys.argv[1].strip()
 
     # Remove https://start.gg/ prefix if provided
+    print(f'short_url: {short_url}')
     if short_url.startswith("https://start.gg/"):
         short_url = short_url.replace("https://start.gg/", "")
     elif short_url.startswith("http://start.gg/"):
         short_url = short_url.replace("http://start.gg/", "")
     elif short_url.startswith("start.gg/"):
         short_url = short_url.replace("start.gg/", "")
+    elif short_url.startswith("www.start.gg"):
+        short_url = short_url.replace("www.start.gg", "")
 
     try:
         slug = resolve_tournament_slug_from_unique_string(short_url)

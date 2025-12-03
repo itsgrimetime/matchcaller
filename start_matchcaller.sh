@@ -4,10 +4,11 @@
 
 set -e  # Exit on error
 
+
 # Configuration
 MATCHCALLER_DIR="/home/abbey/matchcaller"
 SHORT_URL="abbey"
-EVENT_TYPE="singles"
+EVENT_TYPE=${EVENT_NAME:="melee-singles-7-30-start"}
 NETWORK_TIMEOUT=120  # 2 minutes
 API_TOKEN="${STARTGG_API_TOKEN:-}"  # Read from environment or set below
 
@@ -89,6 +90,7 @@ fi
 # Step 3: Resolve tournament slug
 echo "🔍 Resolving tournament from start.gg/${SHORT_URL}..."
 if SLUG_PART=$(./resolve_slug "$SHORT_URL" 2>/dev/null); then
+    echo "SLUG_PART: $SLUG_PART"
     TOURNAMENT_SLUG="tournament/${SLUG_PART}/event/${EVENT_TYPE}"
     echo "✅ Resolved: $TOURNAMENT_SLUG"
 else
@@ -101,4 +103,5 @@ fi
 echo "🚀 Starting matchcaller..."
 sleep 1
 
-exec python -m matchcaller --token "$API_TOKEN" --slug "$TOURNAMENT_SLUG"
+# exec python -m matchcaller --token "$API_TOKEN" --slug "$TOURNAMENT_SLUG"
+exec python -m matchcaller --token "$API_TOKEN" --slug "tournament/melee-abbey-tavern-122/event/melee-singles-7-30-start"

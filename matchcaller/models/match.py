@@ -145,11 +145,11 @@ class MatchRow:
     """Represents a single match/set"""
 
     STATE_COLORS: dict[MatchState, str] = {
-        MatchState.WAITING: "[dim][ ][/dim]",  # Not started/Waiting
-        MatchState.READY: "[bold red][!][/bold red]",  # Ready to be called
-        MatchState.COMPLETED: "[green][x][/green]",  # Completed
-        MatchState.IN_PROGRESS: "[bold yellow][>][/bold yellow]",  # In progress
-        MatchState.INVALID: "[green][x][/green]",  # Completed (alternative)
+        MatchState.WAITING: "[dim]⚪[/dim]",  # Not started/Waiting - white
+        MatchState.READY: "[red]🔴[/red]",  # Ready to be called - red
+        MatchState.COMPLETED: "[green]✅[/green]",  # Completed - green
+        MatchState.IN_PROGRESS: "[yellow]🟡[/yellow]",  # In progress - yellow
+        MatchState.INVALID: "[green]✅[/green]",  # Completed (alternative) - green
     }
 
     STATE_NAMES: dict[MatchState, str] = {
@@ -190,9 +190,9 @@ class MatchRow:
     def status_icon(self) -> str:
         # Check if match has actually started based on startedAt timestamp
         if self.state == MatchState.READY and self.started_at:
-            icon = "[bold yellow][>][/bold yellow]"
+            icon = "[yellow]🟡[/yellow]"
         else:
-            icon = self.STATE_COLORS.get(MatchState(self.state), "[ ]")
+            icon = self.STATE_COLORS.get(MatchState(self.state), "⚪")
         if self.has_tbd_player:
             return f"[dim]{icon}[/dim]"
         return icon

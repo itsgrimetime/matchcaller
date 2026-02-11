@@ -41,6 +41,8 @@ class PlayerData(DictCompatibleBaseModel):
 
     tag: str
     id: int | None = None
+    discord_id: str | None = None
+    discord_username: str | None = None
 
 
 class EntrantSource(DictCompatibleBaseModel):
@@ -173,6 +175,14 @@ class MatchRow:
         self.station: int | None = set_data.station
         self.stream: str | None = set_data.stream
 
+        # Discord account info (from start.gg linked accounts)
+        self.player1_discord_id: str | None = (
+            set_data.player1.discord_id if set_data.player1 else None
+        )
+        self.player2_discord_id: str | None = (
+            set_data.player2.discord_id if set_data.player2 else None
+        )
+
         # Store simulation context for normalized time calculations
         self.simulation_context: dict[str, int] | None = set_data.simulation_context
 
@@ -180,16 +190,17 @@ class MatchRow:
     def status_icon(self) -> str:
         # Check if match has actually started based on startedAt timestamp
         if self.state == MatchState.READY and self.started_at:
-            # State READY but has startedAt - it's actually in progress
-            return "[yellow]🟡[/yellow]"
+            icon = "[yellow]🟡[/yellow]"
         else:
-            return self.STATE_COLORS.get(MatchState(self.state), "⚪")
+            icon = self.STATE_COLORS.get(MatchState(self.state), "⚪")
+        if self.has_tbd_player:
+            return f"[dim]{icon}[/dim]"
+        return icon
 
     @property
     def status_text(self) -> str:
         # Check if match has actually started based on startedAt timestamp
         if self.state == MatchState.READY and self.started_at:
-            # State READY but has startedAt - it's actually in progress
             status = "In Progress"
         else:
             status = self.STATE_NAMES.get(MatchState(self.state), "Unknown")
@@ -200,6 +211,8 @@ class MatchRow:
         elif self.stream:
             status += f" (Stream: {self.stream})"
 
+        if self.has_tbd_player:
+            return f"[dim]{status}[/dim]"
         return status
 
     @property
@@ -207,13 +220,19 @@ class MatchRow:
         """Return normalized match name with TBD players at the end"""
         # Normalize TBD matches to always show <player> vs TBD
         if self.player1 == "TBD" and self.player2 != "TBD":
-            return f"{self.player2[:12]} vs TBD"
+            name = f"{self.player2[:12]} vs TBD"
         elif self.player1 == "" and self.player2 != "" and self.player2 != "TBD":
-            return f"{self.player2[:24]} vs TBD"
+            name = f"{self.player2[:24]} vs TBD"
         elif self.player2 == "" and self.player1 != "" and self.player1 != "TBD":
-            return f"{self.player1[:24]} vs TBD"
+            name = f"{self.player1[:24]} vs TBD"
         else:
-            return f"{self.player1[:12]} vs {self.player2[:12]}"
+            name = f"{self.player1[:12]} vs {self.player2[:12]}"
+
+        if self.has_tbd_player:
+            return f"[dim]{name}[/dim]"
+        elif self.state == MatchState.READY and not self.started_at:
+            return f"[bold]{name}[/bold]"
+        return name
 
     @property
     def has_tbd_player(self) -> bool:
@@ -226,6 +245,14 @@ class MatchRow:
     @property
     def time_since_ready(self) -> str:
         """Calculate time since match became ready, started, or was last updated"""
+        raw = self._raw_time_since_ready
+        if raw != "-" and self.has_tbd_player:
+            return f"[dim]{raw}[/dim]"
+        return raw
+
+    @property
+    def _raw_time_since_ready(self) -> str:
+        """Inner time calculation without dim markup."""
         # Use simulation time if available, otherwise use real time
         if self.simulation_context and self.simulation_context.get("is_simulation"):
             now = self.simulation_context["current_time"]

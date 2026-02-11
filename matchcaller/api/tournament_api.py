@@ -90,6 +90,12 @@ class TournamentAPI:
                             entrant {
                                 participants {
                                     gamerTag
+                                    user {
+                                        authorizations(types: [DISCORD]) {
+                                            externalUsername
+                                            externalId
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -253,9 +259,13 @@ class TournamentAPI:
             log(f"🔍 Processing {total_sets} sets from API")
 
             for set_data in sets_data:
-                # Extract player names from slots
+                # Extract player names and Discord info from slots
                 player1_name = "TBD"
                 player2_name = "TBD"
+                p1_discord_id: str | None = None
+                p1_discord_username: str | None = None
+                p2_discord_id: str | None = None
+                p2_discord_username: str | None = None
 
                 if len(set_data.slots) >= 2:
                     # Player 1
@@ -265,7 +275,12 @@ class TournamentAPI:
                         and slot1.entrant.participants
                         and len(slot1.entrant.participants) > 0
                     ):
-                        player1_name = slot1.entrant.participants[0].gamerTag
+                        p1 = slot1.entrant.participants[0]
+                        player1_name = p1.gamerTag
+                        if p1.user and p1.user.authorizations:
+                            auth = p1.user.authorizations[0]
+                            p1_discord_id = auth.externalId
+                            p1_discord_username = auth.externalUsername
 
                     # Player 2
                     slot2 = set_data.slots[1]
@@ -274,7 +289,12 @@ class TournamentAPI:
                         and slot2.entrant.participants
                         and len(slot2.entrant.participants) > 0
                     ):
-                        player2_name = slot2.entrant.participants[0].gamerTag
+                        p2 = slot2.entrant.participants[0]
+                        player2_name = p2.gamerTag
+                        if p2.user and p2.user.authorizations:
+                            auth = p2.user.authorizations[0]
+                            p2_discord_id = auth.externalId
+                            p2_discord_username = auth.externalUsername
 
                 # Create bracket name from phase and round info
                 bracket_name = "Unknown Bracket"
@@ -320,8 +340,16 @@ class TournamentAPI:
                     poolName=pool_name,
                     phase_group=pool_name,
                     phase_name=pool_name,
-                    player1=PlayerData(tag=player1_name, id=None),
-                    player2=PlayerData(tag=player2_name, id=None),
+                    player1=PlayerData(
+                        tag=player1_name, id=None,
+                        discord_id=p1_discord_id,
+                        discord_username=p1_discord_username,
+                    ),
+                    player2=PlayerData(
+                        tag=player2_name, id=None,
+                        discord_id=p2_discord_id,
+                        discord_username=p2_discord_username,
+                    ),
                     state=set_data.state,
                     created_at=None,
                     started_at=set_data.startedAt,
@@ -359,6 +387,71 @@ class TournamentAPI:
                 return MOCK_TOURNAMENT_DATA
             else:
                 raise e
+
+    async def get_events_for_tournament(self, tournament_slug: str) -> list[dict[str, str]]:
+        """Get all events for a tournament slug (e.g., 'melee-abbey-tavern-122').
+
+        Returns a list of dicts with 'id', 'name', and 'slug' keys.
+        """
+        query = """
+        query TournamentEvents($slug: String!) {
+            tournament(slug: $slug) {
+                name
+                events {
+                    id
+                    name
+                    slug
+                }
+            }
+        }
+        """
+        variables = {"slug": tournament_slug}
+        headers = {
+            "Authorization": f"Bearer {self.api_token}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                log(f"🔍 Fetching events for tournament: {tournament_slug}")
+                async with session.post(
+                    self.base_url,
+                    json={"query": query, "variables": variables},
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        log(f"❌ HTTP Error fetching events: {error_text}")
+                        return []
+
+                    raw_data = await response.json()
+
+                    if raw_data.get("errors"):
+                        log(f"❌ GraphQL errors: {raw_data['errors']}")
+                        return []
+
+                    tournament = (raw_data.get("data") or {}).get("tournament")
+                    if not tournament:
+                        log(f"❌ No tournament found for slug: {tournament_slug}")
+                        return []
+
+                    events = tournament.get("events") or []
+                    result = []
+                    for ev in events:
+                        result.append({
+                            "id": str(ev["id"]),
+                            "name": ev.get("name", ""),
+                            "slug": ev.get("slug", ""),
+                        })
+                    log(f"✅ Found {len(result)} events for {tournament.get('name', tournament_slug)}")
+                    for ev in result:
+                        log(f"   - {ev['name']} (slug: {ev['slug']})")
+                    return result
+
+        except Exception as e:
+            log(f"❌ Error fetching tournament events: {type(e).__name__}: {e}")
+            return []
 
     async def get_event_id_from_slug(self, event_slug: str) -> str | None:
         """Get event ID from event slug (e.g., 'tournament/the-c-stick-55/event/melee-singles')"""

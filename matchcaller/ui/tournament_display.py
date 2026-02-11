@@ -20,6 +20,7 @@ except ImportError:
     )
 
 from ..api import TournamentAPI
+from ..api.jsonbin_api import AlertData, JsonBinAPI
 from ..models import MatchRow, MatchState
 from ..utils.logging import log, set_console_logging
 
@@ -47,9 +48,10 @@ halloween_theme = Theme(
 
 class TournamentDisplay(App[None]):
     """Main tournament display application"""
-    
+
     # Add a flag to prevent concurrent rebuilds
     _rebuilding: bool = False
+    _current_pool_names: set[str] = set()
 
     CSS: ClassVar[
         str
@@ -138,6 +140,8 @@ class TournamentDisplay(App[None]):
         event_id: str | None = None,
         event_slug: str | None = None,
         poll_interval: float = 30.0,
+        jsonbin_id: str | None = None,
+        jsonbin_key: str | None = None,
     ):
         super().__init__()
         self.api: TournamentAPI = TournamentAPI(api_token, event_id, event_slug)
@@ -145,10 +149,18 @@ class TournamentDisplay(App[None]):
         # Set initial title - will be updated when tournament data is loaded
         self.title = "Loading Tournament..."
         self.poll_interval: float = poll_interval
+
+        # JsonBin alert integration
+        self.jsonbin_api: JsonBinAPI | None = None
+        if jsonbin_id:
+            self.jsonbin_api = JsonBinAPI(jsonbin_id, jsonbin_key)
+        self.alerts: AlertData = AlertData({})
+
         log(
             "🎯 TournamentDisplay initialized with token: "
             f"{'***' + api_token[-4:] if api_token else 'None'}, "
-            f"event: {event_id}, slug: {event_slug}, poll_interval: {poll_interval}"
+            f"event: {event_id}, slug: {event_slug}, poll_interval: {poll_interval}, "
+            f"jsonbin: {jsonbin_id or 'None'}"
         )
 
     def compose(self) -> ComposeResult:
@@ -177,6 +189,11 @@ class TournamentDisplay(App[None]):
         self.set_interval(
             self.poll_interval, self.fetch_tournament_data
         )  # Fetch fresh data every 30 seconds
+
+        # Poll jsonbin for alerts if configured
+        if self.jsonbin_api:
+            self.set_interval(15.0, self.fetch_alerts)  # Check alerts every 15s
+            self.fetch_alerts()
 
         log("🚀 Starting initial data fetch...")
         # Initial fetch - run immediately
@@ -292,6 +309,71 @@ class TournamentDisplay(App[None]):
             self.last_update = f"Error at {datetime.now().strftime('%H:%M:%S')}"
             # Don't clear the display or change data - keep showing last successful state
 
+    @work(exclusive=True, group="alerts")
+    async def fetch_alerts(self) -> None:
+        """Fetch late arrival / DQ alerts from jsonbin."""
+        if not self.jsonbin_api:
+            return
+        try:
+            new_alerts = await self.jsonbin_api.fetch_alerts()
+            changed = (
+                new_alerts.late_arrivals != self.alerts.late_arrivals
+                or new_alerts.dqs != self.alerts.dqs
+            )
+            self.alerts = new_alerts
+            if changed:
+                log(
+                    f"🔔 Alerts updated: {len(self.alerts.late_arrivals)} late, "
+                    f"{len(self.alerts.dqs)} DQs"
+                )
+                self.update_table()
+        except Exception as e:
+            log(f"❌ Alert fetch error: {type(e).__name__}: {e}")
+
+    @staticmethod
+    def _pool_id(pool_name: str) -> str:
+        """Generate a stable DOM element ID for a pool name."""
+        return f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
+
+    @staticmethod
+    def _sort_pool_matches(pool_matches: list[MatchRow]) -> list[MatchRow]:
+        """Sort matches within a pool: known-player matches first, then TBD."""
+        return sorted(
+            pool_matches,
+            key=lambda m: (
+                m.has_tbd_player,
+                (
+                    0
+                    if (m.state == MatchState.READY and m.started_at)
+                    else (
+                        1
+                        if m.state == MatchState.READY
+                        else 2 if m.state == MatchState.IN_PROGRESS else 3
+                    )
+                ),
+                -(m.updated_at or 0),
+            ),
+        )
+
+    def _match_row_data(self, match: MatchRow) -> list[str]:
+        """Build the row data list for a match."""
+        name = match.match_name
+        # Annotate players with late arrival / DQ alerts (matched by Discord ID)
+        discord_ids = {match.player1_discord_id, match.player2_discord_id} - {None}
+        tags: list[str] = []
+        if discord_ids & self.alerts.dqs:
+            tags.append("[bold red]DQ[/bold red]")
+        if discord_ids & self.alerts.late_arrivals:
+            tags.append("[bold yellow]LATE[/bold yellow]")
+        if tags:
+            name = f"{name} {' '.join(tags)}"
+
+        return [
+            name,
+            f"{match.status_icon} {match.status_text}",
+            match.time_since_ready,
+        ]
+
     def rebuild_table(
         self,
         pools: defaultdict[str, list[MatchRow]],
@@ -299,59 +381,27 @@ class TournamentDisplay(App[None]):
         num_columns: int,
         pools_container: Horizontal,
     ) -> None:
-        # Generate unique timestamp-based suffix to avoid ID collisions
-        import time
-        timestamp_suffix = str(int(time.time() * 1000))[-6:]  # Last 6 digits of milliseconds
-        
-        # Ensure container is clear before rebuilding to avoid duplicate IDs
+        # Ensure container is clear before rebuilding
         try:
             pools_container.remove_children()
         except Exception as e:
             log(f"⚠️ Warning during remove_children: {e}")
 
-        # Create column containers with unique IDs
+        # Create column containers with stable IDs
         columns: list[Vertical] = []
         for i in range(num_columns):
-            # Use timestamp-based unique ID to prevent collisions
-            column_id = f"column-{i}-{timestamp_suffix}"
-            new_column: Vertical = Vertical(classes="pool-column", id=column_id)
+            new_column: Vertical = Vertical(classes="pool-column", id=f"column-{i}")
             columns.append(new_column)
-            
-            try:
-                pools_container.mount(new_column)
-            except Exception as e:
-                log(f"❌ Failed to mount column {i}: {e}")
-                # If mounting fails, try without ID to at least show content
-                new_column_no_id = Vertical(classes="pool-column")
-                columns[i] = new_column_no_id
-                pools_container.mount(new_column_no_id)
+            pools_container.mount(new_column)
 
         # Distribute pools across columns
         for i, pool_name in enumerate(sorted_pools):
             column_index = i % num_columns
             column: Vertical = columns[column_index]
             pool_matches: list[MatchRow] = pools[pool_name]
-            # Use unique pool ID with timestamp to avoid conflicts
-            pool_id: str = f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}-{timestamp_suffix}"
+            pool_id = self._pool_id(pool_name)
 
-            # Sort matches within each pool: All known-player matches first (by state), then all TBD matches
-            sorted_matches: list[MatchRow] = sorted(
-                pool_matches,
-                key=lambda m: (
-                    m.has_tbd_player,  # Known players first (False), then TBD players (True)
-                    # Within each group, sort by state priority
-                    (
-                        0
-                        if (m.state == MatchState.READY and m.started_at)
-                        else (
-                            1
-                            if m.state == MatchState.READY
-                            else 2 if m.state == MatchState.IN_PROGRESS else 3
-                        )
-                    ),  # Priority order by state
-                    -(m.updated_at or 0),  # Most recent first within each priority
-                ),
-            )
+            sorted_matches = self._sort_pool_matches(pool_matches)
 
             # Create a new DataTable for this pool
             pool_table: DataTable[str] = DataTable(classes="pool-table")
@@ -362,12 +412,7 @@ class TournamentDisplay(App[None]):
 
             # Add matches to the pool table
             for match in sorted_matches:
-                row_data: list[str] = [
-                    match.match_name,
-                    f"{match.status_icon} {match.status_text}",
-                    match.time_since_ready,
-                ]
-                pool_table.add_row(*row_data, key=str(match.id))
+                pool_table.add_row(*self._match_row_data(match), key=str(match.id))
 
             # Create pool section with title and table
             pool_section = Vertical(
@@ -381,6 +426,9 @@ class TournamentDisplay(App[None]):
             log(
                 f"🔄 Added pool section: {pool_name} to column {column_index} with {len(sorted_matches)} matches"
             )
+
+        # Store pool names so we can detect real changes on next refresh
+        self._current_pool_names = set(sorted_pools)
 
     def update_table(self) -> None:
         """Update the matches display with vertical pool columns"""
@@ -415,18 +463,12 @@ class TournamentDisplay(App[None]):
         log(f"🔄 Found {len(pools)} pools: {list(pools.keys())}")
 
         # Check if we need to rebuild the entire structure
-        existing_pools = {
-            section.id for section in pools_container.query(".pool-section")
-        }
-        new_pools = {
-            f"pool-{(pool or 'unknown').lower().replace(' ', '-')}"
-            for pool in pools.keys()
-        }
+        new_pool_names = set(pools.keys())
 
         # Always rebuild if there's a loading message present
         has_loading_message = bool(pools_container.query("#loading-message"))
 
-        rebuild_needed = existing_pools != new_pools or has_loading_message
+        rebuild_needed = new_pool_names != self._current_pool_names or has_loading_message
 
         # Sort pools by name for consistent ordering
         sorted_pools: list[str] = sorted(key for key in pools.keys())
@@ -470,64 +512,23 @@ class TournamentDisplay(App[None]):
         else:
             log("🔄 Pool structure unchanged, updating existing tables")
 
-        # Update existing pool tables
+        # Update existing pool tables in-place (no DOM teardown)
         for pool_name in sorted_pools:
             pool_matches: list[MatchRow] = pools[pool_name]
-            # Note: Without timestamp suffix, we try to match existing pools
-            pool_id = f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
-
-            # Sort matches within each pool: All known-player matches first, then all TBD matches
-            sorted_matches: list[MatchRow] = sorted(
-                pool_matches,
-                key=lambda m: (
-                    m.has_tbd_player,  # Known players first (False), then TBD players (True)
-                    # Within each group, sort by state priority
-                    (
-                        0
-                        if (m.state == MatchState.READY and m.started_at)
-                        else (
-                            1
-                            if m.state == MatchState.READY
-                            else 2 if m.state == MatchState.IN_PROGRESS else 3
-                        )
-                    ),
-                    -(m.updated_at or 0),
-                ),
-            )
+            pool_id = self._pool_id(pool_name)
+            sorted_matches = self._sort_pool_matches(pool_matches)
 
             try:
-                # Try to find the pool section (it might have a timestamp suffix)
-                pool_sections = pools_container.query(".pool-section")
-                matching_pool = None
-                for section in pool_sections:
-                    # Check if the ID starts with our expected pool_id
-                    if section.id and section.id.startswith(pool_id):
-                        matching_pool = section
-                        break
-                
-                if matching_pool:
-                    pool_section = cast(Vertical, matching_pool)
-                    pool_table = pool_section.query_one(DataTable)
-                    pool_table.clear()
+                pool_section = cast(Vertical, pools_container.query_one(f"#{pool_id}"))
+                pool_table = pool_section.query_one(DataTable)
+                pool_table.clear()
 
-                    # Add updated matches
-                    for match in sorted_matches:
-                        row_data = [
-                            match.match_name,
-                            f"{match.status_icon} {match.status_text}",
-                            match.time_since_ready,
-                        ]
-                        pool_table.add_row(*row_data, key=str(match.id))
+                for match in sorted_matches:
+                    pool_table.add_row(*self._match_row_data(match), key=str(match.id))
 
-                    log(
-                        f"🔄 Updated existing pool: {pool_name} with {len(sorted_matches)} matches"
-                    )
-                else:
-                    log(f"⚠️  Could not find pool section for {pool_name}, triggering rebuild")
-                    # Force a rebuild if we can't find the pool
-                    self._rebuilding = False  # Reset flag and try again
-                    return self.update_table()
-                    
+                log(
+                    f"🔄 Updated existing pool: {pool_name} with {len(sorted_matches)} matches"
+                )
             except Exception as e:
                 log(f"⚠️  Could not update pool {pool_name}: {e}")
 
@@ -551,54 +552,24 @@ class TournamentDisplay(App[None]):
 
             for pool_name in sorted(key for key in pools.keys() if key is not None):
                 pool_matches: list[MatchRow] = pools[pool_name]
-                pool_id = f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
-
-                # Sort matches same as update_table: All known-player matches first, then all TBD matches
-                sorted_matches: list[MatchRow] = sorted(
-                    pool_matches,
-                    key=lambda m: (
-                        m.has_tbd_player,  # Known players first (False), then TBD players (True)
-                        # Within each group, sort by state priority
-                        (
-                            0
-                            if (m.state == MatchState.READY and m.started_at)
-                            else (
-                                1
-                                if m.state == MatchState.READY
-                                else 2 if m.state == MatchState.IN_PROGRESS else 3
-                            )
-                        ),
-                        -(m.updated_at or 0),
-                    ),
-                )
+                pool_id = self._pool_id(pool_name)
+                sorted_matches = self._sort_pool_matches(pool_matches)
 
                 try:
-                    # Find pool section with matching ID (might have timestamp suffix)
-                    pool_sections = container.query(".pool-section")
-                    matching_pool = None
-                    for section in pool_sections:
-                        if section.id and section.id.startswith(pool_id):
-                            matching_pool = section
-                            break
-                    
-                    if matching_pool:
-                        pools_table = matching_pool.query_one(DataTable)
-                        
-                        # Update just the duration column (column 2) for each match
-                        for i, match in enumerate(sorted_matches):
-                            try:
-                                pools_table.update_cell_at(
-                                    Coordinate(i, 2), match.time_since_ready
-                                )
-                            except Exception:
-                                # Skip this cell update if it fails
-                                pass
-                    else:
-                        log(f"⚠️ Failed to find pool section for {pool_name}")
+                    pool_section = container.query_one(f"#{pool_id}")
+                    pools_table = pool_section.query_one(DataTable)
+
+                    # Update just the duration column (column 2) for each match
+                    for i, match in enumerate(sorted_matches):
+                        try:
+                            pools_table.update_cell_at(
+                                Coordinate(i, 2), match.time_since_ready
+                            )
+                        except Exception:
+                            pass
 
                 except Exception as e:
                     log(f"⚠️ Failed to query pool: {e}")
-                    # If individual updates fail, fall back to full refresh every 10 seconds
                     if int(time.time()) % 10 == 0:
                         self.update_table()
                         break

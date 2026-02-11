@@ -3,10 +3,24 @@
 from ..models.match import DictCompatibleBaseModel
 
 
+class StartGGAuthorization(DictCompatibleBaseModel):
+    """A linked account authorization (Discord, Twitch, etc.)"""
+
+    externalUsername: str | None = None
+    externalId: str | None = None
+
+
+class StartGGUser(DictCompatibleBaseModel):
+    """A start.gg user account"""
+
+    authorizations: list[StartGGAuthorization] | None = None
+
+
 class StartGGParticipant(DictCompatibleBaseModel):
     """A participant in a tournament (player)"""
 
     gamerTag: str
+    user: StartGGUser | None = None
 
 
 class StartGGEntrant(DictCompatibleBaseModel):

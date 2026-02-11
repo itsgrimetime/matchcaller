@@ -19,8 +19,8 @@ MOCK_TOURNAMENT_DATA: TournamentState = TournamentState(
             poolName="Pool A",
             phase_group="Winners Bracket",
             phase_name="Winners Bracket",
-            player1=PlayerData(tag="Alice", id=1),
-            player2=PlayerData(tag="Bob", id=2),
+            player1=PlayerData(tag="Alice", id=1, discord_id="111111111111111111"),
+            player2=PlayerData(tag="Bob", id=2, discord_id="222222222222222222"),
             state=2,  # Ready to be called
             created_at=MOCK_BASE_TIME - 600,
             started_at=None,

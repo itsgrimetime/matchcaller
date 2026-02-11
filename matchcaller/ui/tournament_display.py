@@ -444,6 +444,7 @@ class TournamentDisplay(App[None]):
 
         if not self.matches:
             log("⚠️  No matches to display")
+            self._current_pool_names = set()  # Reset so next update triggers rebuild
             # Only clear if we need to show "no matches"
             if not pools_container.query("#no-matches"):
                 pools_container.remove_children()
@@ -465,10 +466,18 @@ class TournamentDisplay(App[None]):
         # Check if we need to rebuild the entire structure
         new_pool_names = set(pools.keys())
 
-        # Always rebuild if there's a loading message present
-        has_loading_message = bool(pools_container.query("#loading-message"))
+        # Verify DOM actually has the expected pool sections
+        dom_in_sync = all(
+            bool(pools_container.query(f"#{self._pool_id(p)}"))
+            for p in new_pool_names
+        )
 
-        rebuild_needed = new_pool_names != self._current_pool_names or has_loading_message
+        rebuild_needed = (
+            new_pool_names != self._current_pool_names
+            or not dom_in_sync
+        )
+        if not dom_in_sync and new_pool_names == self._current_pool_names:
+            log("🔧 DOM out of sync with pool names, forcing rebuild")
 
         # Sort pools by name for consistent ordering
         sorted_pools: list[str] = sorted(key for key in pools.keys())
@@ -580,8 +589,9 @@ class TournamentDisplay(App[None]):
                 log(f"⚠️  Could not update display: {e}")
 
     def action_refresh(self) -> None:
-        """Manually refresh data"""
-        log("🔄 Manual refresh triggered")
+        """Manually refresh data (forces full rebuild)"""
+        log("🔄 Manual refresh triggered - forcing full rebuild")
+        self._current_pool_names = set()  # Force rebuild on next update
         self.fetch_tournament_data()
         self.notify("Refreshing tournament data...")
 

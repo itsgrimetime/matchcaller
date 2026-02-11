@@ -516,7 +516,13 @@ class TournamentDisplay(App[None]):
                     log(f"❌ Fallback error display also failed: {fallback_error}")
             finally:
                 self._rebuilding = False
-                log("✅ Table updated successfully with separate pool sections")
+                child_count = len(pools_container.children)
+                log(
+                    f"✅ Rebuild complete: {child_count} DOM children, "
+                    f"pools: {sorted_pools}"
+                )
+                if child_count == 0:
+                    log("❌ Rebuild produced empty DOM!")
             return
         else:
             log("🔄 Pool structure unchanged, updating existing tables")
@@ -539,7 +545,10 @@ class TournamentDisplay(App[None]):
                     f"🔄 Updated existing pool: {pool_name} with {len(sorted_matches)} matches"
                 )
             except Exception as e:
-                log(f"⚠️  Could not update pool {pool_name}: {e}")
+                log(f"⚠️ Could not update pool {pool_name} (#{pool_id}): {e} — forcing rebuild")
+                self._current_pool_names = set()
+                self.update_table()
+                return
 
         log("✅ Table updated successfully with separate pool sections")
 
@@ -551,6 +560,22 @@ class TournamentDisplay(App[None]):
         # Update duration timers every second by updating just the duration column
         try:
             container = self.query_one("#main-container", ScrollableContainer)
+            pools_container = container.query_one("#pools-container", Horizontal)
+
+            # Periodic health check: verify DOM has content
+            now_sec = int(time.time())
+            if now_sec % 30 == 0:
+                child_count = len(pools_container.children)
+                log(
+                    f"📊 Health: {len(self.matches)} matches, "
+                    f"{len(self._current_pool_names)} tracked pools, "
+                    f"{child_count} DOM children"
+                )
+                if child_count == 0 and self.matches:
+                    log("🔧 Health check: DOM empty but matches exist, forcing rebuild")
+                    self._current_pool_names = set()
+                    self.update_table()
+                    return
 
             # Group matches by pool to match the UI structure
             from collections import defaultdict
@@ -578,15 +603,13 @@ class TournamentDisplay(App[None]):
                             pass
 
                 except Exception as e:
-                    log(f"⚠️ Failed to query pool: {e}")
-                    if int(time.time()) % 10 == 0:
-                        self.update_table()
-                        break
+                    log(f"⚠️ Failed to query pool {pool_name} (#{pool_id}): {e}")
+                    self._current_pool_names = set()
+                    self.update_table()
+                    break
 
         except Exception as e:
-            # Only print this error occasionally to avoid spam
-            if int(time.time()) % 30 == 0:
-                log(f"⚠️  Could not update display: {e}")
+            log(f"⚠️ Could not update display: {e}")
 
     def action_refresh(self) -> None:
         """Manually refresh data (forces full rebuild)"""

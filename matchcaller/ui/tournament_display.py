@@ -217,7 +217,7 @@ class TournamentDisplay(App[None]):
             pools_container.mount(
                 Vertical(
                     Static(
-                        "🔄 Fetching tournament data from start.gg...",
+                        "Fetching tournament data from start.gg...",
                         classes="pool-title",
                     ),
                     Static(

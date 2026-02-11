@@ -101,6 +101,9 @@ class TournamentAPI:
                         }
                         phaseGroup {
                             displayIdentifier
+                            phase {
+                                name
+                            }
                         }
                     }
                 }
@@ -302,22 +305,32 @@ class TournamentAPI:
 
                 if set_data.phaseGroup:
                     phase_group = set_data.phaseGroup
+                    phase_name_str = ""
 
-                    # Get pool/group identifier and format it nicely
+                    # Get phase name (e.g., "Bracket", "Top 24")
+                    if phase_group.phase and phase_group.phase.name:
+                        phase_name_str = phase_group.phase.name
+                        bracket_name = phase_name_str
+
+                    # Get pool/group identifier and combine with phase name
                     if phase_group.displayIdentifier:
                         raw_identifier = phase_group.displayIdentifier
-                        # Format pool names nicely
+                        # Format pool identifier nicely
                         if raw_identifier.isdigit():
-                            pool_name = f"Pool {raw_identifier}"
+                            pool_suffix = f"Pool {raw_identifier}"
                         elif raw_identifier.isalpha() and len(raw_identifier) == 1:
-                            pool_name = f"Pool {raw_identifier.upper()}"
+                            pool_suffix = f"Pool {raw_identifier.upper()}"
                         else:
-                            pool_name = raw_identifier
+                            pool_suffix = raw_identifier
 
-                    # Get phase name for bracket
-                    if phase_group.phase and phase_group.phase.name:
-                        phase_name = phase_group.phase.name
-                        bracket_name = phase_name
+                        # Combine: "Bracket - Pool 1" or just "Pool 1"
+                        if phase_name_str:
+                            pool_name = f"{phase_name_str} - {pool_suffix}"
+                        else:
+                            pool_name = pool_suffix
+                    elif phase_name_str:
+                        # No sub-pools, just use phase name (e.g., "Top 24")
+                        pool_name = phase_name_str
 
                 # Add round information to bracket name
                 if set_data.fullRoundText:

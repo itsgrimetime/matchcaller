@@ -192,12 +192,13 @@ pip install pydantic python-dotenv
 ## Debug & Logging
 
 Current implementation includes comprehensive file logging:
-- **Log file**: `/tmp/tournament_debug.log`
+- **Log file**: `~/matchcaller/logs/tournament_debug.log` (persists across reboots)
+- **Rotation**: 5MB max, keeps last 3 files
 - **Console output**: Captured by Textual, check log file for debugging
 - **API responses**: Full request/response cycle logged
 - **Match parsing**: Individual set processing details
 
-Use `tail -f /tmp/tournament_debug.log` for real-time debugging.
+Use `tail -f ~/matchcaller/logs/tournament_debug.log` for real-time debugging.
 
 ---
 

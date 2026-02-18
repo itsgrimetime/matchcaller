@@ -1,10 +1,17 @@
 """Logging utilities for the tournament display application."""
 
 import logging
+import os
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 # Global state
 _console_logging_enabled = None
 _file_logger = None
+
+# Log to ~/matchcaller/logs/ so it persists across reboots
+_LOG_DIR = Path(os.path.expanduser("~")) / "matchcaller" / "logs"
+_LOG_FILE = _LOG_DIR / "tournament_debug.log"
 
 def _is_tui_running() -> bool:
     """Detect if we're running in TUI mode vs CLI mode"""
@@ -32,9 +39,13 @@ def log(message: str):
     
     # Initialize file logger once
     if _file_logger is None:
+        _LOG_DIR.mkdir(parents=True, exist_ok=True)
         _file_logger = logging.getLogger('tournament_file')
         _file_logger.setLevel(logging.DEBUG)
-        file_handler = logging.FileHandler("/tmp/tournament_debug.log")
+        # Rotate at 5MB, keep last 3 files
+        file_handler = RotatingFileHandler(
+            _LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3
+        )
         file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
         _file_logger.addHandler(file_handler)
         _file_logger.propagate = False

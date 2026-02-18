@@ -52,6 +52,7 @@ class TournamentDisplay(App[None]):
     # Add a flag to prevent concurrent rebuilds
     _rebuilding: bool = False
     _current_pool_names: set[str] = set()
+    _rebuild_counter: int = 0
 
     CSS: ClassVar[
         str
@@ -387,10 +388,12 @@ class TournamentDisplay(App[None]):
         except Exception as e:
             log(f"⚠️ Warning during remove_children: {e}")
 
-        # Create column containers with stable IDs
+        # Create column containers with unique IDs to avoid collisions
+        # with stale widgets from async remove_children()
+        self._rebuild_counter += 1
         columns: list[Vertical] = []
         for i in range(num_columns):
-            new_column: Vertical = Vertical(classes="pool-column", id=f"column-{i}")
+            new_column: Vertical = Vertical(classes="pool-column", id=f"col-{self._rebuild_counter}-{i}")
             columns.append(new_column)
             pools_container.mount(new_column)
 

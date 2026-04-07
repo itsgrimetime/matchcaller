@@ -1,8 +1,7 @@
 """JsonBin.io API client for fetching late arrivals and DQ data."""
 
-import aiohttp
-
 from ..utils.logging import log
+from .transport import AiohttpTransport, HTTPTransport
 
 
 class AlertData:
@@ -27,10 +26,17 @@ class AlertData:
 class JsonBinAPI:
     """Fetch late arrival / DQ alerts from a jsonbin.io bin."""
 
-    def __init__(self, bin_id: str, api_key: str | None = None):
+    def __init__(
+        self,
+        bin_id: str,
+        api_key: str | None = None,
+        *,
+        transport: HTTPTransport | None = None,
+    ):
         self.bin_id = bin_id
         self.api_key = api_key
         self.base_url = f"https://api.jsonbin.io/v3/b/{bin_id}/latest"
+        self.transport = transport or AiohttpTransport()
 
     async def fetch_alerts(self) -> AlertData:
         headers: dict[str, str] = {}
@@ -40,25 +46,27 @@ class JsonBinAPI:
             headers["X-Access-Key"] = "$2a$10$placeholder"  # public read
 
         try:
-            async with aiohttp.ClientSession() as session:
-                log(f"🔔 Fetching alerts from jsonbin: {self.bin_id}")
-                async with session.get(
-                    self.base_url,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=10),
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        log(f"❌ JsonBin HTTP {response.status}: {error_text}")
-                        return AlertData({})
+            log(f"🔔 Fetching alerts from jsonbin: {self.bin_id}")
+            response = await self.transport.get_json(
+                self.base_url,
+                headers=headers,
+                timeout_seconds=10,
+            )
+            if response.status != 200:
+                error_text = response.text or str(response.json_data)
+                log(f"❌ JsonBin HTTP {response.status}: {error_text}")
+                return AlertData({})
 
-                    data = await response.json()
-                    record = data.get("record", {})
-                    log(
-                        f"✅ Alerts fetched: {len(record.get('lateArrivals', []))} late, "
-                        f"{len(record.get('dqs', []))} DQs"
-                    )
-                    return AlertData(record)
+            if not isinstance(response.json_data, dict):
+                log("❌ JsonBin returned a non-JSON response")
+                return AlertData({})
+
+            record = response.json_data.get("record", {})
+            log(
+                f"✅ Alerts fetched: {len(record.get('lateArrivals', []))} late, "
+                f"{len(record.get('dqs', []))} DQs"
+            )
+            return AlertData(record)
 
         except Exception as e:
             log(f"❌ JsonBin fetch error: {type(e).__name__}: {e}")

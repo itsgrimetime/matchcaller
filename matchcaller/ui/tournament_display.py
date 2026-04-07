@@ -1,9 +1,8 @@
 """Main tournament display TUI application."""
 
 import time
-from collections import defaultdict
-from datetime import datetime
-from typing import ClassVar, cast
+from dataclasses import replace
+from typing import ClassVar
 
 from textual.binding import BindingType
 
@@ -11,9 +10,8 @@ try:
     from textual import work
     from textual.app import App, ComposeResult
     from textual.containers import Horizontal, ScrollableContainer, Vertical
-    from textual.coordinate import Coordinate
     from textual.reactive import reactive
-    from textual.widgets import DataTable, Footer, Header, Static
+    from textual.widgets import Footer, Header, Static
 except ImportError:
     raise ImportError(
         "Missing required dependencies. Please install with: pip install textual aiohttp"
@@ -21,7 +19,15 @@ except ImportError:
 
 from ..api import TournamentAPI
 from ..api.jsonbin_api import AlertData, JsonBinAPI
-from ..models import MatchRow, MatchState
+from ..models import MatchRow
+from .dependencies import AlertSource, RefreshControllerFactory, TournamentDataSource
+from .pool_grid import PoolGridManager
+from .refresh_controller import (
+    DisplaySnapshot,
+    RefreshController,
+    build_display_snapshot,
+    build_error_timestamp,
+)
 from ..utils.logging import log, set_console_logging
 
 from textual.theme import Theme
@@ -46,13 +52,20 @@ halloween_theme = Theme(
 #     self.register_theme(halloween_theme)
 #     self.theme = "halloween"
 
+
+def _default_refresh_controller_factory(
+    app: App[None],
+    poll_interval: float,
+) -> RefreshController:
+    """Build the default refresh controller for the app."""
+    return RefreshController(app, poll_interval=poll_interval)
+
 class TournamentDisplay(App[None]):
     """Main tournament display application"""
 
-    # Add a flag to prevent concurrent rebuilds
-    _rebuilding: bool = False
-    _current_pool_names: set[str] = set()
-    _rebuild_counter: int = 0
+    MATCH_COLUMN_KEY: ClassVar[str] = "match"
+    STATUS_COLUMN_KEY: ClassVar[str] = "status"
+    DURATION_COLUMN_KEY: ClassVar[str] = "duration"
 
     CSS: ClassVar[
         str
@@ -93,7 +106,7 @@ class TournamentDisplay(App[None]):
     .pool-section {
         margin: 0 0 1 0;
         padding: 0;
-        border: solid $primary;
+        border: ascii $primary;
         height: auto;
         width: 1fr;
     }
@@ -143,25 +156,43 @@ class TournamentDisplay(App[None]):
         poll_interval: float = 30.0,
         jsonbin_id: str | None = None,
         jsonbin_key: str | None = None,
+        api: TournamentDataSource | None = None,
+        alert_source: AlertSource | None = None,
+        pool_grid: PoolGridManager | None = None,
+        refresh_controller_factory: RefreshControllerFactory | None = None,
     ):
         super().__init__()
-        self.api: TournamentAPI = TournamentAPI(api_token, event_id, event_slug)
+        self.api: TournamentDataSource = api or TournamentAPI(
+            api_token,
+            event_id,
+            event_slug,
+        )
+        controller_factory = (
+            refresh_controller_factory or _default_refresh_controller_factory
+        )
+        self.refresh_controller: RefreshController = controller_factory(
+            self,
+            poll_interval,
+        )
+        self.pool_grid: PoolGridManager = pool_grid or PoolGridManager()
         self.matches: list[MatchRow] = []
         # Set initial title - will be updated when tournament data is loaded
         self.title = "Loading Tournament..."
         self.poll_interval: float = poll_interval
 
         # JsonBin alert integration
-        self.jsonbin_api: JsonBinAPI | None = None
-        if jsonbin_id:
-            self.jsonbin_api = JsonBinAPI(jsonbin_id, jsonbin_key)
+        self.alert_source: AlertSource | None = alert_source
+        if self.alert_source is None and jsonbin_id:
+            self.alert_source = JsonBinAPI(jsonbin_id, jsonbin_key)
         self.alerts: AlertData = AlertData({})
 
         log(
             "🎯 TournamentDisplay initialized with token: "
             f"{'***' + api_token[-4:] if api_token else 'None'}, "
             f"event: {event_id}, slug: {event_slug}, poll_interval: {poll_interval}, "
-            f"jsonbin: {jsonbin_id or 'None'}"
+            f"jsonbin: {jsonbin_id or 'None'}, "
+            f"api_source: {type(self.api).__name__}, "
+            f"alert_source: {type(self.alert_source).__name__ if self.alert_source else 'None'}"
         )
 
     def compose(self) -> ComposeResult:
@@ -185,16 +216,11 @@ class TournamentDisplay(App[None]):
         log("📡 Showing loading state...")
         self.show_loading_state()
 
-        # Start periodic updates
-        self.set_interval(1.0, self.update_display)  # Update every second
-        self.set_interval(
-            self.poll_interval, self.fetch_tournament_data
-        )  # Fetch fresh data every 30 seconds
-
-        # Poll jsonbin for alerts if configured
-        if self.jsonbin_api:
-            self.set_interval(15.0, self.fetch_alerts)  # Check alerts every 15s
-            self.fetch_alerts()
+        self.refresh_controller.start(
+            update_display=self.update_display,
+            fetch_tournament_data=self.fetch_tournament_data,
+            fetch_alerts=self.fetch_alerts if self.alert_source else None,
+        )
 
         log("🚀 Starting initial data fetch...")
         # Initial fetch - run immediately
@@ -209,27 +235,50 @@ class TournamentDisplay(App[None]):
         self.ready_sets = 0
         self.in_progress_sets = 0
         self.last_update = "Loading..."
+        self.pool_grid.reset()
 
-        # Add a loading message to the pools container
+        self._replace_pools_with_message(
+            "Fetching tournament data from start.gg...",
+            "Please wait while we load match information.",
+            message_id="loading-message",
+        )
+
+    def _get_pools_container(self) -> Horizontal:
+        """Return the pools container widget."""
+        container = self.query_one("#main-container", ScrollableContainer)
+        return container.query_one("#pools-container", Horizontal)
+
+    def _apply_snapshot(self, snapshot: DisplaySnapshot) -> None:
+        """Apply a prepared display snapshot to the app state."""
+        self.event_name = snapshot.event_name
+        self.title = snapshot.title
+        self.matches = snapshot.matches
+        self.total_sets = snapshot.total_sets
+        self.ready_sets = snapshot.ready_sets
+        self.in_progress_sets = snapshot.in_progress_sets
+        self.last_update = snapshot.last_update
+
+    def _replace_pools_with_message(
+        self,
+        title: str,
+        body: str,
+        *,
+        message_id: str,
+    ) -> None:
+        """Swap the pool grid for a single message panel."""
         try:
-            container = self.query_one("#main-container", ScrollableContainer)
-            pools_container = container.query_one("#pools-container", Horizontal)
-            pools_container.remove_children()  # Clear any existing content
-            pools_container.mount(
-                Vertical(
-                    Static(
-                        "Fetching tournament data from start.gg...",
-                        classes="pool-title",
-                    ),
-                    Static(
-                        "Please wait while we load match information.",
-                        id="loading-message",
-                    ),
-                    classes="pool-section",
+            pools_container = self._get_pools_container()
+            with self.batch_update():
+                pools_container.remove_children()
+                pools_container.mount(
+                    Vertical(
+                        Static(title, classes="pool-title"),
+                        Static(body, id=message_id),
+                        classes="pool-section",
+                    )
                 )
-            )
         except Exception as e:
-            log(f"⚠️  Could not show loading state: {e}")
+            log(f"⚠️ Could not replace pools content: {e}")
 
     def load_mock_data(self) -> None:
         """Load mock data to test the UI"""
@@ -237,16 +286,8 @@ class TournamentDisplay(App[None]):
 
         log("🧪 Loading mock data for testing...")
         data = MOCK_TOURNAMENT_DATA
-        self.event_name = data["event_name"]
-        tournament_name = data.get("tournament_name", "Mock Tournament")
-        self.title = f"{tournament_name} - {self.event_name}"  # Update the header title
-        self.matches = [MatchRow(set_data) for set_data in data["sets"]]
-        self.total_sets = len(self.matches)
-        self.ready_sets = sum(1 for m in self.matches if m.state == MatchState.READY)
-        self.in_progress_sets = sum(
-            1 for m in self.matches if m.state == MatchState.IN_PROGRESS
-        )
-        self.last_update = "Mock Data"
+        snapshot = replace(build_display_snapshot(data), last_update="Mock Data")
+        self._apply_snapshot(snapshot)
         self.update_table()
         log("✅ Mock data loaded successfully")
 
@@ -262,33 +303,11 @@ class TournamentDisplay(App[None]):
                 f"{type(data)} with keys: "
                 f"{list(data.keys()) if isinstance(data, dict) else 'not a dict'}"
             )
-
-            self.event_name = data.event_name
-            tournament_name = data.tournament_name
-            self.title = (
-                f"{tournament_name} - {self.event_name}"  # Update the header title
-            )
+            snapshot = build_display_snapshot(data)
+            self._apply_snapshot(snapshot)
             log(f"🔄 Event name set to: {self.event_name}")
             log(f"🔄 Tournament title set to: {self.title}")
-
-            self.matches = [MatchRow(set_data) for set_data in data.sets]
             log(f"🔄 Created {len(self.matches)} match objects")
-
-            self.total_sets = len(self.matches)
-            self.ready_sets = sum(
-                1
-                for m in self.matches
-                if m.state == MatchState.READY and not m.started_at
-            )
-            self.in_progress_sets = sum(
-                1
-                for m in self.matches
-                if (
-                    m.state == MatchState.IN_PROGRESS
-                    or (m.state == MatchState.READY and m.started_at)
-                )
-            )
-            self.last_update = datetime.now().strftime("%H:%M:%S")
 
             log(
                 f"🔄 Stats: total={self.total_sets}, ready={self.ready_sets}, in_progress={self.in_progress_sets}"
@@ -307,16 +326,16 @@ class TournamentDisplay(App[None]):
 
             log(f"❌ Full traceback: {traceback.format_exc()}")
             # Keep existing data, just update timestamp to show we tried
-            self.last_update = f"Error at {datetime.now().strftime('%H:%M:%S')}"
+            self.last_update = build_error_timestamp()
             # Don't clear the display or change data - keep showing last successful state
 
     @work(exclusive=True, group="alerts")
     async def fetch_alerts(self) -> None:
         """Fetch late arrival / DQ alerts from jsonbin."""
-        if not self.jsonbin_api:
+        if not self.alert_source:
             return
         try:
-            new_alerts = await self.jsonbin_api.fetch_alerts()
+            new_alerts = await self.alert_source.fetch_alerts()
             changed = (
                 new_alerts.late_arrivals != self.alerts.late_arrivals
                 or new_alerts.dqs != self.alerts.dqs
@@ -331,239 +350,139 @@ class TournamentDisplay(App[None]):
         except Exception as e:
             log(f"❌ Alert fetch error: {type(e).__name__}: {e}")
 
-    @staticmethod
-    def _pool_id(pool_name: str) -> str:
-        """Generate a stable DOM element ID for a pool name."""
-        return f"pool-{(pool_name or 'unknown').lower().replace(' ', '-')}"
-
-    @staticmethod
-    def _sort_pool_matches(pool_matches: list[MatchRow]) -> list[MatchRow]:
-        """Sort matches within a pool: known-player matches first, then TBD."""
-        return sorted(
-            pool_matches,
-            key=lambda m: (
-                m.has_tbd_player,
-                (
-                    0
-                    if (m.state == MatchState.READY and m.started_at)
-                    else (
-                        1
-                        if m.state == MatchState.READY
-                        else 2 if m.state == MatchState.IN_PROGRESS else 3
-                    )
-                ),
-                -(m.updated_at or 0),
-            ),
-        )
-
-    def _match_row_data(self, match: MatchRow) -> list[str]:
-        """Build the row data list for a match."""
-        name = match.match_name
-        # Annotate players with late arrival / DQ alerts (matched by Discord ID)
-        discord_ids = {match.player1_discord_id, match.player2_discord_id} - {None}
-        tags: list[str] = []
-        if discord_ids & self.alerts.dqs:
-            tags.append("[bold red]DQ[/bold red]")
-        if discord_ids & self.alerts.late_arrivals:
-            tags.append("[bold yellow]LATE[/bold yellow]")
-        if tags:
-            name = f"{name} {' '.join(tags)}"
-
-        return [
-            name,
-            f"{match.status_icon} {match.status_text}",
-            match.time_since_ready,
-        ]
-
     def rebuild_table(
         self,
-        pools: defaultdict[str, list[MatchRow]],
-        sorted_pools: list[str],
-        num_columns: int,
-        pools_container: Horizontal,
+        plan,
     ) -> None:
-        # Ensure container is clear before rebuilding
+        """Schedule a full pool layout rebuild."""
+        self.refresh_controller.begin_ui_mutation()
+        self.run_worker(
+            self._rebuild_table_async(plan),
+            group="ui",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _rebuild_table_async(
+        self,
+        plan,
+    ) -> None:
+        """Rebuild the pool layout after awaiting DOM removal/mount operations."""
         try:
-            pools_container.remove_children()
-        except Exception as e:
-            log(f"⚠️ Warning during remove_children: {e}")
-
-        # Create column containers with unique IDs to avoid collisions
-        # with stale widgets from async remove_children()
-        self._rebuild_counter += 1
-        columns: list[Vertical] = []
-        for i in range(num_columns):
-            new_column: Vertical = Vertical(classes="pool-column", id=f"col-{self._rebuild_counter}-{i}")
-            columns.append(new_column)
-            pools_container.mount(new_column)
-
-        # Distribute pools across columns
-        for i, pool_name in enumerate(sorted_pools):
-            column_index = i % num_columns
-            column: Vertical = columns[column_index]
-            pool_matches: list[MatchRow] = pools[pool_name]
-            pool_id = self._pool_id(pool_name)
-
-            sorted_matches = self._sort_pool_matches(pool_matches)
-
-            # Create a new DataTable for this pool
-            pool_table: DataTable[str] = DataTable(classes="pool-table")
-            pool_table.add_column("Match", width=26)
-            pool_table.add_column("Status", width=14)
-            pool_table.add_column("Duration", width=10)
-            pool_table.cursor_type = "row"
-
-            # Add matches to the pool table
-            for match in sorted_matches:
-                pool_table.add_row(*self._match_row_data(match), key=str(match.id))
-
-            # Create pool section with title and table
-            pool_section = Vertical(
-                Static(pool_name or "Unknown Pool", classes="pool-title"),
-                pool_table,
-                classes="pool-section",
-                id=pool_id,
+            pools_container = self._get_pools_container()
+            await self.pool_grid.rebuild(
+                pools_container,
+                plan,
+                self.alerts,
+                match_column_key=self.MATCH_COLUMN_KEY,
+                status_column_key=self.STATUS_COLUMN_KEY,
+                duration_column_key=self.DURATION_COLUMN_KEY,
+                log_fn=log,
             )
-
-            column.mount(pool_section)
+            child_count = len(pools_container.children)
             log(
-                f"🔄 Added pool section: {pool_name} to column {column_index} with {len(sorted_matches)} matches"
+                f"✅ Rebuild complete: {child_count} DOM children, pools: {plan.sorted_pools}"
             )
-
-        # Store pool names so we can detect real changes on next refresh
-        self._current_pool_names = set(sorted_pools)
+            if child_count == 0:
+                log("❌ Rebuild produced empty DOM!")
+        except Exception as e:
+            log(f"❌ Error during rebuild_table: {e}")
+            self.pool_grid.reset()
+            try:
+                pools_container = self._get_pools_container()
+                await self.pool_grid.replace_with_message(
+                    pools_container,
+                    title="Error updating display",
+                    body=f"Rebuild failed: {str(e)[:50]}...",
+                    message_id="error-message",
+                )
+            except Exception as fallback_error:
+                log(f"❌ Fallback error display also failed: {fallback_error}")
+        finally:
+            self.refresh_controller.finish_ui_mutation(flush_update=self.update_table)
 
     def update_table(self) -> None:
         """Update the matches display with vertical pool columns"""
         log(f"🔄 update_table() called with {len(self.matches)} matches")
-        
-        # Prevent concurrent rebuilds
-        if self._rebuilding:
-            log("⚠️ Rebuild already in progress, skipping this update")
+
+        if self.refresh_controller.ui_busy:
+            self.refresh_controller.mark_ui_update_pending("update_table", log_fn=log)
             return
 
-        container = self.query_one("#main-container", ScrollableContainer)
-        pools_container = container.query_one("#pools-container", Horizontal)
+        pools_container = self._get_pools_container()
 
         if not self.matches:
             log("⚠️  No matches to display")
-            self._current_pool_names = set()  # Reset so next update triggers rebuild
-            # Only clear if we need to show "no matches"
+            self.pool_grid.reset()
             if not pools_container.query("#no-matches"):
-                pools_container.remove_children()
-                pools_container.mount(
-                    Vertical(
-                        Static("No matches found", classes="pool-title"),
-                        Static("No active matches at this time.", id="no-matches"),
-                        classes="pool-section",
-                    )
+                self._replace_pools_with_message(
+                    "No matches found",
+                    "No active matches at this time.",
+                    message_id="no-matches",
                 )
             return
 
-        pools: defaultdict[str, list[MatchRow]] = defaultdict(list)
-        for match in self.matches:
-            pools[match.pool].append(match)
-
-        log(f"🔄 Found {len(pools)} pools: {list(pools.keys())}")
-
-        # Check if we need to rebuild the entire structure
-        new_pool_names = set(pools.keys())
-
-        # Verify DOM actually has the expected pool sections
-        dom_in_sync = all(
-            bool(pools_container.query(f"#{self._pool_id(p)}"))
-            for p in new_pool_names
+        container_width = pools_container.size.width or self.size.width or 80
+        plan = self.pool_grid.plan(
+            self.matches,
+            container_width=container_width,
+            dom_has_pool=lambda pool_name: bool(
+                pools_container.query(f"#{self.pool_grid.pool_id(pool_name)}")
+            ),
         )
 
-        rebuild_needed = (
-            new_pool_names != self._current_pool_names
-            or not dom_in_sync
-        )
-        if not dom_in_sync and new_pool_names == self._current_pool_names:
+        log(f"🔄 Found {len(plan.pools)} pools: {list(plan.pools.keys())}")
+
+        if not plan.dom_in_sync and set(plan.pools.keys()) == self.pool_grid.current_pool_names:
             log("🔧 DOM out of sync with pool names, forcing rebuild")
 
-        # Sort pools by name for consistent ordering
-        sorted_pools: list[str] = sorted(key for key in pools.keys())
+        log(
+            f"🔄 Organizing {len(plan.sorted_pools)} pools into {plan.num_columns} columns"
+        )
 
-        # Calculate number of columns based on number of pools
-        num_pools = len(sorted_pools)
-        if num_pools == 1:
-            num_columns = 1
-        elif num_pools <= 4:
-            num_columns = 2
-        elif num_pools <= 6:
-            num_columns = 3
-        else:
-            num_columns = 4
-
-        log(f"🔄 Organizing {num_pools} pools into {num_columns} columns")
-
-        if rebuild_needed:
+        if plan.rebuild_needed:
+            if plan.layout_changed and self.pool_grid.current_layout_signature is not None:
+                log("🔧 Layout width changed, forcing rebuild")
             log("🔄 Pool structure changed, rebuilding columns")
-            self._rebuilding = True
-            try:
-                self.rebuild_table(pools, sorted_pools, num_columns, pools_container)
-            except Exception as e:
-                log(f"❌ Error during rebuild_table: {e}")
-                # If rebuild fails, try to clear and show error message
-                try:
-                    pools_container.remove_children()
-                    pools_container.mount(
-                        Vertical(
-                            Static("Error updating display", classes="pool-title"),
-                            Static(f"Rebuild failed: {str(e)[:50]}...", id="error-message"),
-                            classes="pool-section",
-                        )
-                    )
-                except Exception as fallback_error:
-                    log(f"❌ Fallback error display also failed: {fallback_error}")
-            finally:
-                self._rebuilding = False
-                child_count = len(pools_container.children)
-                log(
-                    f"✅ Rebuild complete: {child_count} DOM children, "
-                    f"pools: {sorted_pools}"
-                )
-                if child_count == 0:
-                    log("❌ Rebuild produced empty DOM!")
+            self.rebuild_table(plan)
             return
-        else:
-            log("🔄 Pool structure unchanged, updating existing tables")
+
+        log("🔄 Pool structure unchanged, updating existing tables")
 
         # Update existing pool tables in-place (no DOM teardown)
-        for pool_name in sorted_pools:
-            pool_matches: list[MatchRow] = pools[pool_name]
-            pool_id = self._pool_id(pool_name)
-            sorted_matches = self._sort_pool_matches(pool_matches)
+        updated_in_place = False
+        self.refresh_controller.begin_ui_mutation()
+        try:
+            self.pool_grid.sync_existing(
+                pools_container,
+                plan,
+                self.alerts,
+                match_column_key=self.MATCH_COLUMN_KEY,
+                status_column_key=self.STATUS_COLUMN_KEY,
+                duration_column_key=self.DURATION_COLUMN_KEY,
+                log_fn=log,
+            )
+            updated_in_place = True
+        except Exception as e:
+            log(
+                f"⚠️ Could not update pool layout in place: {e} — queuing rebuild"
+            )
+            self.pool_grid.reset()
+            self.refresh_controller.mark_ui_update_pending("pool update failed", log_fn=log)
+        finally:
+            self.refresh_controller.finish_ui_mutation(flush_update=self.update_table)
 
-            try:
-                pool_section = cast(Vertical, pools_container.query_one(f"#{pool_id}"))
-                pool_table = pool_section.query_one(DataTable)
-                pool_table.clear()
-
-                for match in sorted_matches:
-                    pool_table.add_row(*self._match_row_data(match), key=str(match.id))
-
-                log(
-                    f"🔄 Updated existing pool: {pool_name} with {len(sorted_matches)} matches"
-                )
-            except Exception as e:
-                log(f"⚠️ Could not update pool {pool_name} (#{pool_id}): {e} — forcing rebuild")
-                self._current_pool_names = set()
-                self.update_table()
-                return
-
-        log("✅ Table updated successfully with separate pool sections")
+        if updated_in_place:
+            log("✅ Table updated successfully with separate pool sections")
 
     def update_display(self) -> None:
         """Update time-dependent displays (called every second)"""
-        if not self.matches:
+        if not self.matches or self.refresh_controller.ui_busy:
             return
 
         # Update duration timers every second by updating just the duration column
         try:
-            container = self.query_one("#main-container", ScrollableContainer)
-            pools_container = container.query_one("#pools-container", Horizontal)
+            pools_container = self._get_pools_container()
 
             # Periodic health check: verify DOM has content
             now_sec = int(time.time())
@@ -571,55 +490,29 @@ class TournamentDisplay(App[None]):
                 child_count = len(pools_container.children)
                 log(
                     f"📊 Health: {len(self.matches)} matches, "
-                    f"{len(self._current_pool_names)} tracked pools, "
+                    f"{len(self.pool_grid.current_pool_names)} tracked pools, "
                     f"{child_count} DOM children"
                 )
                 if child_count == 0 and self.matches:
                     log("🔧 Health check: DOM empty but matches exist, forcing rebuild")
-                    self._current_pool_names = set()
+                    self.pool_grid.reset()
                     self.update_table()
                     return
 
-            # Group matches by pool to match the UI structure
-            from collections import defaultdict
-
-            pools: defaultdict[str, list[MatchRow]] = defaultdict(list)
-            for match in self.matches:
-                pools[match.pool].append(match)
-
-            for pool_name in sorted(key for key in pools.keys() if key is not None):
-                pool_matches: list[MatchRow] = pools[pool_name]
-                pool_id = self._pool_id(pool_name)
-                sorted_matches = self._sort_pool_matches(pool_matches)
-
-                try:
-                    pool_section = container.query_one(f"#{pool_id}")
-                    pools_table = pool_section.query_one(DataTable)
-
-                    # Update just the duration column (column 2) for each match
-                    for i, match in enumerate(sorted_matches):
-                        try:
-                            pools_table.update_cell_at(
-                                Coordinate(i, 2), match.time_since_ready
-                            )
-                        except Exception:
-                            pass
-
-                except Exception as e:
-                    log(f"⚠️ Failed to query pool {pool_name} (#{pool_id}): {e}")
-                    self._current_pool_names = set()
-                    self.update_table()
-                    break
+            self.pool_grid.update_durations(
+                pools_container,
+                self.matches,
+                duration_column_key=self.DURATION_COLUMN_KEY,
+            )
 
         except Exception as e:
             log(f"⚠️ Could not update display: {e}")
+            self.pool_grid.reset()
 
     def action_refresh(self) -> None:
-        """Manually refresh data (forces full rebuild)"""
-        log("🔄 Manual refresh triggered - forcing full rebuild")
-        self._current_pool_names = set()  # Force rebuild on next update
-        self.fetch_tournament_data()
-        self.notify("Refreshing tournament data...")
+        """Manually refresh data while preserving the current layout when possible."""
+        log("🔄 Manual refresh triggered")
+        self.refresh_controller.refresh_now(fetch_tournament_data=self.fetch_tournament_data)
 
     def on_unmount(self) -> None:
         """Clean up when app is unmounted"""

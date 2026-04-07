@@ -146,11 +146,19 @@ def main():
         time.sleep(1)
 
         # Create and run app with simulation directly
+        app_kwargs = {
+            "api_token": None,
+            "event_id": None,
+            "event_slug": None,
+        }
+        if args.jsonbin_id is not None:
+            app_kwargs["jsonbin_id"] = args.jsonbin_id
+        if args.jsonbin_key is not None:
+            app_kwargs["jsonbin_key"] = args.jsonbin_key
         app = TournamentDisplay(
-            api_token=None, event_id=None, event_slug=None,
-            jsonbin_id=args.jsonbin_id, jsonbin_key=args.jsonbin_key,
+            **app_kwargs,
+            api=SimulatedTournamentAPI(simulator),
         )
-        app.api = SimulatedTournamentAPI(simulator)
 
         try:
             log("🏁 Starting simulation...")
@@ -196,10 +204,17 @@ def main():
         f"🔍 Creating app with token: {repr(token_to_use)}, event: {repr(event_to_use)}, slug: {repr(slug_to_use)}"
     )
 
-    app = TournamentDisplay(
-        api_token=token_to_use, event_id=event_to_use, event_slug=slug_to_use,
-        jsonbin_id=args.jsonbin_id, jsonbin_key=args.jsonbin_key,
-    )
+    app_kwargs = {
+        "api_token": token_to_use,
+        "event_id": event_to_use,
+        "event_slug": slug_to_use,
+    }
+    if args.jsonbin_id is not None:
+        app_kwargs["jsonbin_id"] = args.jsonbin_id
+    if args.jsonbin_key is not None:
+        app_kwargs["jsonbin_key"] = args.jsonbin_key
+
+    app = TournamentDisplay(**app_kwargs)
 
     try:
         log("🏁 Starting Textual app...")

@@ -289,9 +289,9 @@ class TestTournamentAPI:
         assert parsed_set.state == 2
         assert parsed_set.station == 5
         assert parsed_set.stream is None
-        assert parsed_set.poolName == "A1"
-        assert parsed_set.phase_group == "A1"
-        assert parsed_set.phase_name == "A1"
+        assert parsed_set.poolName == "Winner's Bracket - A1"
+        assert parsed_set.phase_group == "Winner's Bracket - A1"
+        assert parsed_set.phase_name == "Winner's Bracket - A1"
         assert parsed_set.entrant1_source is None
         assert parsed_set.entrant2_source is None
         assert parsed_set.stream is None

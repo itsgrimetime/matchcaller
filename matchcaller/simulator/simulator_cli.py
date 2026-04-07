@@ -107,9 +107,12 @@ def simulate_tournament(args: SimulatorArgs) -> int:
 
         # Create TUI that uses simulated data
         app = TournamentDisplay(
-            api_token=None, event_id=None, event_slug=None, poll_interval=1.0
+            api_token=None,
+            event_id=None,
+            event_slug=None,
+            poll_interval=1.0,
+            api=sim_api,
         )
-        app.api = sim_api
 
         # Run the TUI
         try:

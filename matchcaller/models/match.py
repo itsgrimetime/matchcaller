@@ -144,12 +144,12 @@ class SimulationProgress(DictCompatibleBaseModel):
 class MatchRow:
     """Represents a single match/set"""
 
-    STATE_COLORS: dict[MatchState, str] = {
-        MatchState.WAITING: "[dim]⚪[/dim]",  # Not started/Waiting - white
-        MatchState.READY: "[red]🔴[/red]",  # Ready to be called - red
-        MatchState.COMPLETED: "[green]✅[/green]",  # Completed - green
-        MatchState.IN_PROGRESS: "[yellow]🟡[/yellow]",  # In progress - yellow
-        MatchState.INVALID: "[green]✅[/green]",  # Completed (alternative) - green
+    STATE_MARKERS: dict[MatchState, str] = {
+        MatchState.WAITING: "[dim]W[/dim]",
+        MatchState.READY: "[red]R[/red]",
+        MatchState.COMPLETED: "[green]C[/green]",
+        MatchState.IN_PROGRESS: "[yellow]P[/yellow]",
+        MatchState.INVALID: "[green]C[/green]",
     }
 
     STATE_NAMES: dict[MatchState, str] = {
@@ -187,23 +187,46 @@ class MatchRow:
         self.simulation_context: dict[str, int] | None = set_data.simulation_context
 
     @property
-    def status_icon(self) -> str:
-        # Check if match has actually started based on startedAt timestamp
+    def effective_state(self) -> MatchState | None:
+        """Return the display state after normalizing start.gg quirks."""
         if self.state == MatchState.READY and self.started_at:
-            icon = "[yellow]🟡[/yellow]"
-        else:
-            icon = self.STATE_COLORS.get(MatchState(self.state), "⚪")
+            return MatchState.IN_PROGRESS
+        try:
+            return MatchState(self.state)
+        except ValueError:
+            return None
+
+    @property
+    def is_ready(self) -> bool:
+        """Return True when the match is callable but not yet started."""
+        return self.effective_state == MatchState.READY
+
+    @property
+    def is_in_progress(self) -> bool:
+        """Return True for both explicit and inferred in-progress matches."""
+        return self.effective_state == MatchState.IN_PROGRESS
+
+    @property
+    def sort_priority(self) -> int:
+        """Lower values sort earlier in the pool display."""
+        if self.is_in_progress:
+            return 0
+        if self.is_ready:
+            return 1
+        if self.effective_state == MatchState.WAITING:
+            return 2
+        return 3
+
+    @property
+    def status_icon(self) -> str:
+        icon = self.STATE_MARKERS.get(self.effective_state, "[magenta]?[/magenta]")
         if self.has_tbd_player:
             return f"[dim]{icon}[/dim]"
         return icon
 
     @property
     def status_text(self) -> str:
-        # Check if match has actually started based on startedAt timestamp
-        if self.state == MatchState.READY and self.started_at:
-            status = "In Progress"
-        else:
-            status = self.STATE_NAMES.get(MatchState(self.state), "Unknown")
+        status = self.STATE_NAMES.get(self.effective_state, f"Unknown ({self.state})")
 
         # Add station info if available
         if self.station:
@@ -230,7 +253,7 @@ class MatchRow:
 
         if self.has_tbd_player:
             return f"[dim]{name}[/dim]"
-        elif self.state == MatchState.READY and not self.started_at:
+        elif self.is_ready:
             return f"[bold]{name}[/bold]"
         return name
 
@@ -238,7 +261,7 @@ class MatchRow:
     def has_tbd_player(self) -> bool:
         """Check if match has any TBD or empty players"""
         return (
-            self.player1 == "TBD" or self.player1 == "" or 
+            self.player1 == "TBD" or self.player1 == "" or
             self.player2 == "TBD" or self.player2 == ""
         )
 

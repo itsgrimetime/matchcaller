@@ -97,6 +97,57 @@ class TestTournamentDisplay:
                 assert mock_fetch.call_count >= 1
 
     @pytest.mark.asyncio
+    async def test_refresh_preserves_layout_when_pool_structure_unchanged(self):
+        """Refreshing should update rows in place when pools/columns are unchanged."""
+        app = TournamentDisplay(api_token="test_token", event_id="12345")
+
+        initial_data = TournamentState(
+            event_name="Test Event",
+            tournament_name="Test Tournament",
+            sets=[
+                MatchData(
+                    id=1,
+                    displayName="Winners Round 1",
+                    player1=PlayerData(tag="Alice"),
+                    player2=PlayerData(tag="Bob"),
+                    poolName="Pool A",
+                    state=2,
+                    updatedAt=1640995200,
+                )
+            ],
+        )
+        refreshed_data = TournamentState(
+            event_name="Test Event",
+            tournament_name="Test Tournament",
+            sets=[
+                MatchData(
+                    id=1,
+                    displayName="Winners Round 1",
+                    player1=PlayerData(tag="Alice"),
+                    player2=PlayerData(tag="Bob"),
+                    poolName="Pool A",
+                    state=6,
+                    updatedAt=1640995300,
+                    startedAt=1640995260,
+                )
+            ],
+        )
+
+        with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = [initial_data, refreshed_data]
+
+            with patch.object(app, "rebuild_table", wraps=app.rebuild_table) as mock_rebuild:
+                async with app.run_test() as pilot:
+                    await pilot.pause(1.0)
+                    initial_rebuilds = mock_rebuild.call_count
+                    assert initial_rebuilds == 1
+
+                    await pilot.press("r")
+                    await pilot.pause(1.0)
+
+                    assert mock_rebuild.call_count == initial_rebuilds
+
+    @pytest.mark.asyncio
     async def test_quit_action_exits_app(self):
         """Test that quit action exits the application"""
         app = TournamentDisplay()
@@ -247,6 +298,66 @@ class TestTournamentDisplay:
                 assert len(waiting_matches) == 1
                 assert len(tbd_matches) == 1
                 assert len(empty_tag_matches) == 1
+
+    @pytest.mark.asyncio
+    async def test_refresh_reuses_pool_widgets_when_structure_unchanged(self):
+        """Test that manual refresh updates rows in place when pools don't change."""
+        initial_data = TournamentState(
+            event_name="Test Event",
+            tournament_name="Test Tournament",
+            sets=[
+                MatchData(
+                    id=1,
+                    displayName="Winners Round 1",
+                    player1=PlayerData(tag="Alice"),
+                    player2=PlayerData(tag="Bob"),
+                    state=2,
+                    updatedAt=1640995200,
+                    startedAt=None,
+                    poolName="Pool A",
+                )
+            ],
+        )
+        refreshed_data = TournamentState(
+            event_name="Test Event",
+            tournament_name="Test Tournament",
+            sets=[
+                MatchData(
+                    id=1,
+                    displayName="Winners Round 1",
+                    player1=PlayerData(tag="Alice"),
+                    player2=PlayerData(tag="Bob"),
+                    state=6,
+                    updatedAt=1640995300,
+                    startedAt=1640995300,
+                    poolName="Pool A",
+                )
+            ],
+        )
+
+        app = TournamentDisplay(
+            api_token="test_token",
+            event_id="12345",
+            poll_interval=999,
+        )
+
+        with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = [initial_data, refreshed_data]
+
+            async with app.run_test() as pilot:
+                await pilot.pause(1.0)
+
+                pool_section_before = app.query_one("#pool-pool-a")
+                rebuild_counter_before = app.pool_grid.rebuild_counter
+
+                await pilot.press("r")
+                await pilot.pause(1.0)
+
+                pool_section_after = app.query_one("#pool-pool-a")
+                assert pool_section_before is pool_section_after
+                assert app.pool_grid.rebuild_counter == rebuild_counter_before
+                assert app.in_progress_sets == 1
+                assert mock_fetch.call_count == 2
 
     @pytest.mark.asyncio
     async def test_info_line_displays_correct_stats(self):

@@ -11,6 +11,26 @@ A **terminal-based tournament display** for Raspberry Pi Zero 2W that shows live
 - **API Integration**: Successfully fetching live tournament sets with proper authentication
 - **Real Data**: Tested with active tournaments showing Ready/In Progress/Waiting matches
 - **Smart Status Detection**: Uses `startedAt` timestamps to distinguish between Ready vs In Progress matches
+- **Refactor Status**: Presentation, pool-grid rendering, refresh coordination, API parsing, transport injection, and app-shell dependency injection are now split into dedicated modules
+- **Verification Status**: Automated suite currently passes with `98` tests and `9` passing snapshots
+
+## Current Refactor Boundaries
+
+- `matchcaller/ui/presentation.py`: Pure grouping, sorting, layout, and row-render helpers
+- `matchcaller/ui/pool_grid.py`: Pool-table creation, sync, rebuild, and layout planning
+- `matchcaller/ui/refresh_controller.py`: Timer/refresh coordination and queued UI update bookkeeping
+- `matchcaller/ui/dependencies.py`: Protocols for injected tournament, alert, and refresh dependencies
+- `matchcaller/api/parsers.py`: Pure start.gg response parsing and validation
+- `matchcaller/api/queries.py`: GraphQL query documents
+- `matchcaller/api/transport.py`: Small HTTP transport abstraction used by API clients
+
+## Deferred Follow-Up Work
+
+- Extract the remaining fetch/apply orchestration out of `matchcaller/ui/tournament_display.py` into a smaller coordinator service
+- Simplify `matchcaller/models/match.py` by reducing legacy dict-style and camelCase/snake_case compatibility once callers are migrated
+- Migrate remaining older UI tests and app-specific snapshot helpers onto the newer injected seams
+- Extend the transport abstraction to the rest of the networked code for consistency, especially simulator/cloner paths
+- Run a real Raspberry Pi / target-terminal smoke test to confirm the current rendering fixes on hardware
 
 ## Architecture
 

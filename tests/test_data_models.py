@@ -95,7 +95,7 @@ class TestMatchRow:
         """Test status icon for ready state (state 2, no startedAt)"""
         set_data = create_test_match_data(state=2, startedAt=None)
         match = MatchRow(set_data)
-        assert match.status_icon == "[red]R[/red]"
+        assert match.status_icon == "[red]![/red]"
 
     def test_status_icon_in_progress_state_2_with_started_at(self):
         """Test status icon for state 2 with startedAt (actually in progress)"""
@@ -104,19 +104,19 @@ class TestMatchRow:
             startedAt=int(time.time()) - 300,  # Started 5 minutes ago
         )
         match = MatchRow(set_data)
-        assert match.status_icon == "[yellow]P[/yellow]"
+        assert match.status_icon == "[yellow]>[/yellow]"
 
     def test_status_icon_in_progress_state_6(self):
         """Test status icon for explicit in progress state (state 6)"""
         set_data = create_test_match_data(state=6)
         match = MatchRow(set_data)
-        assert match.status_icon == "[yellow]P[/yellow]"
+        assert match.status_icon == "[yellow]>[/yellow]"
 
     def test_status_icon_waiting_state(self):
         """Test status icon for waiting state (state 1)"""
         set_data = create_test_match_data(state=1)
         match = MatchRow(set_data)
-        assert match.status_icon == "[dim]W[/dim]"
+        assert match.status_icon == "[dim].[/dim]"
 
     def test_unknown_state_is_handled_gracefully(self):
         """Test that unexpected start.gg states don't crash the display."""

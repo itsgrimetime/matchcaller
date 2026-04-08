@@ -125,5 +125,5 @@ class TestPresentationHelpers:
         )
 
         assert row[0].endswith("[bold yellow]LATE[/bold yellow]")
-        assert row[1] == "[red]R[/red] Ready"
+        assert row[1] == "[red]![/red] Ready"
         assert row[2] != "-"

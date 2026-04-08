@@ -145,11 +145,11 @@ class MatchRow:
     """Represents a single match/set"""
 
     STATE_MARKERS: dict[MatchState, str] = {
-        MatchState.WAITING: "[dim]W[/dim]",
-        MatchState.READY: "[red]R[/red]",
-        MatchState.COMPLETED: "[green]C[/green]",
-        MatchState.IN_PROGRESS: "[yellow]P[/yellow]",
-        MatchState.INVALID: "[green]C[/green]",
+        MatchState.WAITING: "[dim].[/dim]",
+        MatchState.READY: "[red]![/red]",
+        MatchState.COMPLETED: "[green]x[/green]",
+        MatchState.IN_PROGRESS: "[yellow]>[/yellow]",
+        MatchState.INVALID: "[green]x[/green]",
     }
 
     STATE_NAMES: dict[MatchState, str] = {

@@ -91,6 +91,7 @@ class TestDashboardModels:
             ladder=completed,
             ladder_was_visible=True,
         ) == ViewMode.SPLIT
+        assert resolve_dashboard_view(ViewMode.AUTO, completed, True) == ViewMode.SPLIT
 
     def test_explicit_modes_resolve_without_auto_promotion(self):
         waiting = LadderState(

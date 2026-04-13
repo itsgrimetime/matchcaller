@@ -109,7 +109,6 @@ def derive_ladder_display_status(
 def resolve_dashboard_view(
     requested_view: ViewMode,
     ladder: LadderState | None,
-    *,
     ladder_was_visible: bool = False,
 ) -> ViewMode:
     """Resolve the actual view to render for a dashboard refresh."""

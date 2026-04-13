@@ -91,6 +91,8 @@ class DashboardGridManager:
         alerts: AlertData,
         column_widths: DashboardMatchWidths,
     ) -> Horizontal:
+        main_matches = _main_dashboard_matches(dashboard)
+        ladder_matches = _ladder_dashboard_matches(dashboard)
         main_table = self._match_table(
             "main-dashboard-table",
             [
@@ -99,23 +101,13 @@ class DashboardGridManager:
                     late_arrivals=alerts.late_arrivals,
                     dqs=alerts.dqs,
                 )
-                for match in filter_late_bracket_matches(
-                    [
-                        MatchRow(set_data)
-                        for set_data in (dashboard.main.sets if dashboard.main else [])
-                    ]
-                )
+                for match in main_matches
             ],
             column_widths,
         )
         ladder_table = self._match_table(
             "ladder-dashboard-table",
-            build_ladder_rows(
-                [
-                    MatchRow(set_data)
-                    for set_data in (dashboard.ladder.sets if dashboard.ladder else [])
-                ]
-            ),
+            build_ladder_rows(ladder_matches),
             column_widths,
         )
         standings_table = self._standings_table(dashboard.ladder)
@@ -140,14 +132,10 @@ class DashboardGridManager:
         dashboard: DashboardState,
         column_widths: DashboardMatchWidths,
     ) -> Vertical:
+        ladder_matches = _ladder_dashboard_matches(dashboard)
         ladder_table = self._match_table(
             "ladder-dashboard-table",
-            build_ladder_rows(
-                [
-                    MatchRow(set_data)
-                    for set_data in (dashboard.ladder.sets if dashboard.ladder else [])
-                ]
-            ),
+            build_ladder_rows(ladder_matches),
             column_widths,
         )
         return Vertical(
@@ -196,6 +184,47 @@ class DashboardGridManager:
             table.add_row("-", "No standings", "-", key="empty")
         return table
 
+    def update_durations(
+        self,
+        container: Horizontal,
+        dashboard: DashboardState,
+    ) -> None:
+        """Update only dashboard match-table duration cells."""
+        if dashboard.resolved_view == ViewMode.SPLIT:
+            self._update_table_durations(
+                container,
+                "#main-dashboard-table",
+                _main_dashboard_matches(dashboard),
+            )
+            self._update_table_durations(
+                container,
+                "#ladder-dashboard-table",
+                _ladder_dashboard_matches(dashboard),
+            )
+        elif dashboard.resolved_view == ViewMode.LADDER:
+            self._update_table_durations(
+                container,
+                "#ladder-dashboard-table",
+                _ladder_dashboard_matches(dashboard),
+            )
+
+    def _update_table_durations(
+        self,
+        container: Horizontal,
+        table_selector: str,
+        matches: Sequence[MatchRow],
+    ) -> None:
+        try:
+            table = container.query_one(table_selector, DataTable)
+        except Exception:
+            return
+
+        for index, match in enumerate(matches):
+            try:
+                table.update_cell(str(index), "duration", match.time_since_ready)
+            except Exception:
+                pass
+
 
 def _ladder_title(ladder: LadderState | None) -> str:
     if ladder is None:
@@ -203,3 +232,17 @@ def _ladder_title(ladder: LadderState | None) -> str:
     if ladder.event_name:
         return ladder.event_name
     return ladder.waiting_reason or "Ladder"
+
+
+def _main_dashboard_matches(dashboard: DashboardState) -> list[MatchRow]:
+    if dashboard.main is None:
+        return []
+    return filter_late_bracket_matches(
+        [MatchRow(set_data) for set_data in dashboard.main.sets]
+    )
+
+
+def _ladder_dashboard_matches(dashboard: DashboardState) -> list[MatchRow]:
+    if dashboard.ladder is None:
+        return []
+    return sort_pool_matches([MatchRow(set_data) for set_data in dashboard.ladder.sets])

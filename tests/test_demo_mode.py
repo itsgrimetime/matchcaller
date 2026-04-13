@@ -400,3 +400,21 @@ class TestLogging:
             # Check that real mode was logged
             log_calls = [str(call) for call in mock_log.call_args_list]
             assert any("REAL start.gg data" in call for call in log_calls)
+
+    @patch("matchcaller.__main__.log")
+    def test_real_mode_logging_never_includes_raw_token(self, mock_log):
+        """Real startup logs must not expose the raw start.gg token."""
+        raw_token = "real_token_that_must_not_be_logged"
+        test_args = ["--token", raw_token, "--event", "12345"]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+
+            mock_app = mock_app_class.return_value
+            mock_app.run.return_value = None
+
+            main()
+
+            log_calls = [str(call) for call in mock_log.call_args_list]
+            assert all(raw_token not in call for call in log_calls)

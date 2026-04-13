@@ -1,6 +1,7 @@
 """Focused tests for injected tournament-display dependencies."""
 
 import pytest
+from textual.widgets import DataTable
 
 from matchcaller.api.jsonbin_api import AlertData
 from matchcaller.models.dashboard import DashboardState, ViewMode
@@ -91,6 +92,38 @@ def _single_match_state(*, state: int, started_at: int | None = None) -> Tournam
                 poolName="Pool A",
             )
         ],
+    )
+
+
+def _dashboard_state_with_main_match(
+    *,
+    view: ViewMode,
+    updated_at: int,
+) -> DashboardState:
+    return DashboardState(
+        tournament_name="Injected Tournament",
+        main=TournamentState(
+            event_name="Injected Event",
+            tournament_name="Injected Tournament",
+            sets=[
+                MatchData(
+                    id=1,
+                    displayName="Top 8 - Winners Round 1",
+                    player1=PlayerData(tag="Alice"),
+                    player2=PlayerData(tag="Bob"),
+                    state=2,
+                    updatedAt=updated_at,
+                    startedAt=None,
+                    poolName="Top 8",
+                )
+            ],
+        ),
+        ladder=None,
+        stations=None,
+        requested_view=view,
+        resolved_view=view,
+        ladder_was_visible=view != ViewMode.MAIN,
+        last_update="12:00:00",
     )
 
 
@@ -272,6 +305,39 @@ class TestDisplayInjection:
             assert app.query_one("#dashboard-container")
             assert app.query_one("#ladder-dashboard-table")
             assert app.query_one("#ladder-standings-table")
+
+    @pytest.mark.asyncio
+    async def test_split_dashboard_updates_duration_cell_between_refreshes(
+        self,
+        monkeypatch,
+    ):
+        from matchcaller.models import match as match_model
+
+        base_time = 1_700_000_000
+        monkeypatch.setattr(match_model.time, "time", lambda: base_time)
+        dashboard_state = _dashboard_state_with_main_match(
+            view=ViewMode.SPLIT,
+            updated_at=base_time - 61,
+        )
+        source = StubDashboardSource([dashboard_state])
+        app = TournamentDisplay(
+            view_mode="split",
+            dashboard_source=source,
+            poll_interval=999.0,
+            refresh_controller_factory=passive_refresh_controller_factory,
+        )
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.5)
+
+            table = app.query_one("#main-dashboard-table", DataTable)
+            assert table.get_cell("0", "duration") == "1m 1s"
+
+            monkeypatch.setattr(match_model.time, "time", lambda: base_time + 2)
+            app.update_display()
+            await pilot.pause(0.1)
+
+            assert table.get_cell("0", "duration") == "1m 3s"
 
     def test_loading_state_resets_injected_dashboard_grid(self):
         dashboard_grid = StubDashboardGrid()

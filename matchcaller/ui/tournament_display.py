@@ -555,13 +555,25 @@ class TournamentDisplay(App[None]):
 
     def update_display(self) -> None:
         """Update time-dependent displays (called every second)"""
-        if not self.matches or self.refresh_controller.ui_busy:
+        if self.refresh_controller.ui_busy:
             return
 
         if (
             self.dashboard_state is not None
             and self.dashboard_state.resolved_view != ViewMode.MAIN
         ):
+            try:
+                pools_container = self._get_pools_container()
+                self.dashboard_grid.update_durations(
+                    pools_container,
+                    self.dashboard_state,
+                )
+            except Exception as e:
+                log(f"⚠️ Could not update dashboard display: {e}")
+                self.dashboard_grid.reset()
+            return
+
+        if not self.matches:
             return
 
         # Update duration timers every second by updating just the duration column

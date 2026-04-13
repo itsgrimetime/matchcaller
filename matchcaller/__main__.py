@@ -75,7 +75,7 @@ def main():
     resolved_tournament_slug = None
 
     log("🔍 Command line args:")
-    log(f"   Token: {'***' + args.token[-4:] if args.token else 'None'}")
+    log(f"   Token: {'***' if args.token else 'None'}")
     log(f"   Event: {args.event}")
     log(f"   Slug: {args.slug}")
     log(f"   Short URL: {args.short_url}")
@@ -224,7 +224,9 @@ def main():
         view_mode_to_use = args.view
 
     log(
-        f"🔍 Creating app with token: {repr(token_to_use)}, event: {repr(event_to_use)}, slug: {repr(slug_to_use)}"
+        "🔍 Creating app with token: "
+        f"{'***' if token_to_use else 'None'}, "
+        f"event: {repr(event_to_use)}, slug: {repr(slug_to_use)}"
     )
 
     app_kwargs = {

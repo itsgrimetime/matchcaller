@@ -219,7 +219,7 @@ class TournamentDisplay(App[None]):
 
         log(
             "🎯 TournamentDisplay initialized with token: "
-            f"{'***' + api_token[-4:] if api_token else 'None'}, "
+            f"{'present' if api_token else 'None'}, "
             f"event: {event_id}, slug: {event_slug}, poll_interval: {poll_interval}, "
             f"jsonbin: {jsonbin_id or 'None'}, "
             f"api_source: {type(self.api).__name__}, "

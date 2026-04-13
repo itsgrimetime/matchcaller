@@ -66,9 +66,7 @@ class TournamentAPI:
 
     async def fetch_sets(self) -> TournamentState:
         """Fetch tournament sets from start.gg API"""
-        log(
-            f"🔍 API Token: {'***' + self.api_token[-4:] if self.api_token else 'None'}"
-        )
+        log(f"🔍 API Token: {'present' if self.api_token else 'None'}")
         log(f"🔍 Event ID: {self.event_id}")
         log(f"🔍 Event Slug: {self.event_slug}")
 

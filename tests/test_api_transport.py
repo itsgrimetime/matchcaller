@@ -1,5 +1,7 @@
 """Focused tests for transport-injected API clients."""
 
+from unittest.mock import patch
+
 import pytest
 
 from matchcaller.api.jsonbin_api import AlertData, JsonBinAPI
@@ -90,6 +92,43 @@ class TestTransportInjection:
         assert result.event_name == "Test Event"
         assert transport.post_calls[0]["headers"]["Authorization"] == "Bearer test_token"
         assert transport.post_calls[0]["timeout_seconds"] == 10
+
+    @pytest.mark.asyncio
+    async def test_fetch_sets_log_does_not_include_token_suffix(self):
+        transport = FakeTransport(
+            post_results=[
+                HTTPResult(
+                    status=200,
+                    text='{"data":{"event":{"name":"Test Event","tournament":{"name":"Test Tournament"},"sets":{"nodes":[]}}}}',
+                    json_data={
+                        "data": {
+                            "event": {
+                                "name": "Test Event",
+                                "tournament": {"name": "Test Tournament"},
+                                "sets": {"nodes": []},
+                            }
+                        }
+                    },
+                )
+            ]
+        )
+        raw_token = "dummy_token_with_unique_SUFFIX"
+        suffix = "FFIX"
+        api = TournamentAPI(
+            api_token=raw_token,
+            event_id="12345",
+            transport=transport,
+        )
+
+        with patch("matchcaller.api.tournament_api.log") as mock_log:
+            await api.fetch_sets()
+
+        assert transport.post_calls[0]["headers"]["Authorization"] == (
+            f"Bearer {raw_token}"
+        )
+        log_calls = [str(call) for call in mock_log.call_args_list]
+        assert all(raw_token not in call for call in log_calls)
+        assert all(suffix not in call for call in log_calls)
 
     @pytest.mark.asyncio
     async def test_get_event_id_from_slug_uses_injected_transport(self):

@@ -35,6 +35,18 @@ class TestTournamentDisplay:
             assert app.api.event_id == "12345"
             assert app.api.event_slug == "tournament/test/event/singles"
 
+    def test_app_initialization_log_does_not_include_token_suffix(self):
+        """App construction logs must not expose token-derived substrings."""
+        raw_token = "dummy_token_with_unique_SUFFIX"
+        suffix = "FFIX"
+
+        with patch("matchcaller.ui.tournament_display.log") as mock_log:
+            TournamentDisplay(api_token=raw_token, event_id="12345")
+
+        log_calls = [str(call) for call in mock_log.call_args_list]
+        assert all(raw_token not in call for call in log_calls)
+        assert all(suffix not in call for call in log_calls)
+
     @pytest.mark.asyncio
     async def test_app_creates_required_widgets(self):
         """Test that app creates all required UI widgets"""

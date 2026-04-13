@@ -177,6 +177,14 @@ class TestDashboardModels:
 
         assert [match.id for match in filter_late_bracket_matches(matches)] == [2, 3]
 
+    def test_filter_late_bracket_matches_does_not_match_top_80(self):
+        matches = [
+            _match(1, display_name="Top 80 - Winners", pool_name="Top 80 - Pool 1"),
+            _match(2, display_name="Top 8 - Winners", pool_name="Top 8 - Pool 1"),
+        ]
+
+        assert [match.id for match in filter_late_bracket_matches(matches)] == [2]
+
     def test_filter_late_bracket_matches_falls_back_to_all_matches(self):
         matches = [
             _match(1, display_name="Bracket - Round 1", pool_name="Bracket - Pool 1"),

@@ -1,4 +1,4 @@
-"""Data models for tournament matches."""
+"""Dashboard and match data models for MatchCaller."""
 
 from .dashboard import (
     DashboardState,

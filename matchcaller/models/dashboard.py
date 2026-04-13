@@ -1,5 +1,6 @@
 """Dashboard data models and pure helper functions."""
 
+import re
 from enum import Enum
 from typing import Sequence
 
@@ -164,5 +165,4 @@ def filter_late_bracket_matches(matches: Sequence[MatchRow]) -> list[MatchRow]:
 
 
 def _has_late_bracket_label(value: str) -> bool:
-    normalized = value.lower()
-    return "top 24" in normalized or "top 8" in normalized
+    return bool(re.search(r"\btop\s*(?:24|8)\b", value, flags=re.IGNORECASE))

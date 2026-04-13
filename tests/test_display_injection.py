@@ -3,6 +3,7 @@
 import pytest
 
 from matchcaller.api.jsonbin_api import AlertData
+from matchcaller.models.dashboard import DashboardState, ViewMode
 from matchcaller.models.match import MatchData, PlayerData, TournamentState
 from matchcaller.ui.refresh_controller import RefreshController
 from matchcaller.ui.tournament_display import TournamentDisplay
@@ -32,6 +33,19 @@ class StubAlertSource:
         self.calls += 1
         index = min(self.calls - 1, len(self.alerts) - 1)
         return self.alerts[index]
+
+
+class StubDashboardSource:
+    def __init__(self, snapshots: list[DashboardState]) -> None:
+        self.snapshots = list(snapshots)
+        self.calls = 0
+        self.previous_states: list[DashboardState | None] = []
+
+    async def fetch_dashboard_state(self, previous_state=None) -> DashboardState:
+        self.calls += 1
+        self.previous_states.append(previous_state)
+        index = min(self.calls - 1, len(self.snapshots) - 1)
+        return self.snapshots[index]
 
 
 class PassiveRefreshController(RefreshController):
@@ -133,3 +147,30 @@ class TestDisplayInjection:
             assert source.calls == 1
             assert alert_source.calls == 1
             assert app.alerts.late_arrivals == {"123"}
+
+    @pytest.mark.asyncio
+    async def test_app_uses_injected_dashboard_source(self):
+        dashboard_state = DashboardState(
+            tournament_name="Injected Tournament",
+            main=_single_match_state(state=2),
+            ladder=None,
+            stations=None,
+            requested_view=ViewMode.AUTO,
+            resolved_view=ViewMode.MAIN,
+            ladder_was_visible=False,
+            last_update="12:00:00",
+        )
+        source = StubDashboardSource([dashboard_state])
+        app = TournamentDisplay(
+            view_mode="auto",
+            dashboard_source=source,
+            poll_interval=999.0,
+            refresh_controller_factory=passive_refresh_controller_factory,
+        )
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.5)
+
+            assert source.calls == 1
+            assert app.dashboard_state is dashboard_state
+            assert app.event_name == "Injected Event"

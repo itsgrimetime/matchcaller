@@ -18,6 +18,7 @@ class MatchCallerArgs(argparse.Namespace):
     simulate: str | None = None
     jsonbin_id: str | None = None
     jsonbin_key: str | None = None
+    view: str = "auto"
 
 
 def cleanup_terminal():
@@ -63,8 +64,15 @@ def main():
         "--jsonbin-key",
         help="jsonbin.io API key (X-Master-Key) for private bins",
     )
+    parser.add_argument(
+        "--view",
+        choices=["auto", "main", "split", "ladder"],
+        default="auto",
+        help="Display mode: auto, main, split, or ladder",
+    )
 
     args: MatchCallerArgs = parser.parse_args(namespace=MatchCallerArgs())
+    resolved_tournament_slug = None
 
     log("🔍 Command line args:")
     log(f"   Token: {'***' + args.token[-4:] if args.token else 'None'}")
@@ -76,6 +84,7 @@ def main():
     log(f"   Simulate: {args.simulate}")
     log(f"   JsonBin ID: {args.jsonbin_id or 'None'}")
     log(f"   JsonBin Key: {'***' if args.jsonbin_key else 'None'}")
+    log(f"   View: {args.view}")
 
     # Resolve --short-url to a full event slug
     if args.short_url and args.token and not args.slug:
@@ -84,6 +93,7 @@ def main():
             from .utils.resolve import resolve_tournament_slug_from_unique_string
 
             tournament_slug = resolve_tournament_slug_from_unique_string(args.short_url)
+            resolved_tournament_slug = tournament_slug
             log(f"✅ Resolved tournament slug: {tournament_slug}")
 
             # Query API for events under this tournament
@@ -150,6 +160,8 @@ def main():
             "api_token": None,
             "event_id": None,
             "event_slug": None,
+            "tournament_slug": None,
+            "view_mode": "main",
         }
         if args.jsonbin_id is not None:
             app_kwargs["jsonbin_id"] = args.jsonbin_id
@@ -183,6 +195,8 @@ def main():
         token_to_use = None
         event_to_use = None
         slug_to_use = None
+        tournament_slug_to_use = None
+        view_mode_to_use = "main"
     elif not args.token or (not args.event and not args.slug):
         log("🏆 Running in DEMO mode with mock data")
         log("   Use --token and (--event or --slug) for real data")
@@ -192,6 +206,8 @@ def main():
         token_to_use = None
         event_to_use = None
         slug_to_use = None
+        tournament_slug_to_use = None
+        view_mode_to_use = "main"
     else:
         log("🌐 Running with REAL start.gg data")
         log("   Press Ctrl+C to exit\n")
@@ -199,6 +215,13 @@ def main():
         token_to_use = args.token
         event_to_use = args.event
         slug_to_use = args.slug
+        from .api.dashboard_api import derive_tournament_slug_from_event_slug
+
+        tournament_slug_to_use = (
+            resolved_tournament_slug
+            or derive_tournament_slug_from_event_slug(args.slug)
+        )
+        view_mode_to_use = args.view
 
     log(
         f"🔍 Creating app with token: {repr(token_to_use)}, event: {repr(event_to_use)}, slug: {repr(slug_to_use)}"
@@ -208,6 +231,8 @@ def main():
         "api_token": token_to_use,
         "event_id": event_to_use,
         "event_slug": slug_to_use,
+        "tournament_slug": tournament_slug_to_use,
+        "view_mode": view_mode_to_use,
     }
     if args.jsonbin_id is not None:
         app_kwargs["jsonbin_id"] = args.jsonbin_id

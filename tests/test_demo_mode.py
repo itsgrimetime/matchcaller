@@ -34,7 +34,11 @@ class TestDemoMode:
 
             # Should have been called with None values
             mock_app_class.assert_called_once_with(
-                api_token=None, event_id=None, event_slug=None
+                api_token=None,
+                event_id=None,
+                event_slug=None,
+                tournament_slug=None,
+                view_mode="main",
             )
 
     def test_demo_mode_with_no_arguments(self):
@@ -54,7 +58,11 @@ class TestDemoMode:
 
             # Should have been called with None values (demo mode)
             mock_app_class.assert_called_once_with(
-                api_token=None, event_id=None, event_slug=None
+                api_token=None,
+                event_id=None,
+                event_slug=None,
+                tournament_slug=None,
+                view_mode="main",
             )
 
     def test_demo_mode_with_partial_arguments(self):
@@ -74,7 +82,11 @@ class TestDemoMode:
 
             # Should still use demo mode (None values)
             mock_app_class.assert_called_once_with(
-                api_token=None, event_id=None, event_slug=None
+                api_token=None,
+                event_id=None,
+                event_slug=None,
+                tournament_slug=None,
+                view_mode="main",
             )
 
     def test_real_mode_with_token_and_event_id(self):
@@ -94,7 +106,11 @@ class TestDemoMode:
 
             # Should have been called with real values
             mock_app_class.assert_called_once_with(
-                api_token="real_token", event_id="12345", event_slug=None
+                api_token="real_token",
+                event_id="12345",
+                event_slug=None,
+                tournament_slug=None,
+                view_mode="auto",
             )
 
     def test_real_mode_with_token_and_slug(self):
@@ -117,7 +133,132 @@ class TestDemoMode:
                 api_token="real_token",
                 event_id=None,
                 event_slug="tournament/test/event/singles",
+                tournament_slug="test",
+                view_mode="auto",
             )
+
+    def test_event_id_real_mode_defaults_auto_without_tournament_slug(self):
+        test_args = ["--token", "real_token", "--event", "12345"]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["view_mode"] == "auto"
+            assert kwargs["tournament_slug"] is None
+
+    def test_real_mode_defaults_to_auto_view(self):
+        test_args = ["--token", "real_token", "--slug", "tournament/test/event/singles"]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["view_mode"] == "auto"
+            assert kwargs["tournament_slug"] == "test"
+
+    def test_real_mode_accepts_explicit_ladder_view(self):
+        test_args = [
+            "--token",
+            "real_token",
+            "--slug",
+            "tournament/test/event/singles",
+            "--view",
+            "ladder",
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["view_mode"] == "ladder"
+
+    def test_demo_mode_falls_back_to_main_view_when_ladder_requested(self):
+        test_args = ["--demo", "--view", "ladder"]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["api_token"] is None
+            assert kwargs["view_mode"] == "main"
+
+    def test_short_url_passes_resolved_tournament_slug(self):
+        from unittest.mock import AsyncMock
+
+        test_args = [
+            "--token",
+            "real_token",
+            "--short-url",
+            "abbey",
+            "--event-filter",
+            "singles",
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.utils.resolve.resolve_tournament_slug_from_unique_string",
+            return_value="melee-abbey-tavern-137",
+        ), patch("matchcaller.api.TournamentAPI") as mock_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_api_class.return_value.get_events_for_tournament = AsyncMock(
+                return_value=[
+                    {
+                        "id": "1",
+                        "name": "Melee Singles",
+                        "slug": "tournament/melee-abbey-tavern-137/event/melee-singles",
+                    },
+                    {
+                        "id": "2",
+                        "name": "Melee Ladder",
+                        "slug": "tournament/melee-abbey-tavern-137/event/melee-ladder",
+                    },
+                ]
+            )
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["event_slug"] == "tournament/melee-abbey-tavern-137/event/melee-singles"
+            assert kwargs["tournament_slug"] == "melee-abbey-tavern-137"
+            assert kwargs["view_mode"] == "auto"
+
+    def test_simulate_mode_falls_back_to_main_view_when_ladder_requested(self):
+        test_args = ["--simulate", "simulator_data/fake.json", "--view", "ladder"]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.simulator.bracket_simulator.BracketSimulator"
+        ) as mock_simulator_class, patch(
+            "matchcaller.simulator.bracket_simulator.SimulatedTournamentAPI"
+        ) as mock_sim_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_simulator_class.return_value.load_tournament.return_value = True
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["view_mode"] == "main"
+            assert kwargs["tournament_slug"] is None
+            assert kwargs["api"] is mock_sim_api_class.return_value
 
     # @pytest.mark.skip("Async TUI tests hanging - needs investigation")
     @pytest.mark.asyncio

@@ -17,10 +17,16 @@ except ImportError:
         "Missing required dependencies. Please install with: pip install textual aiohttp"
     )
 
-from ..api import TournamentAPI
+from ..api import TournamentAPI, TournamentDashboardAPI
 from ..api.jsonbin_api import AlertData, JsonBinAPI
 from ..models import MatchRow
-from .dependencies import AlertSource, RefreshControllerFactory, TournamentDataSource
+from ..models.dashboard import DashboardState, ViewMode
+from .dependencies import (
+    AlertSource,
+    DashboardDataSource,
+    RefreshControllerFactory,
+    TournamentDataSource,
+)
 from .pool_grid import PoolGridManager
 from .refresh_controller import (
     DisplaySnapshot,
@@ -160,8 +166,28 @@ class TournamentDisplay(App[None]):
         alert_source: AlertSource | None = None,
         pool_grid: PoolGridManager | None = None,
         refresh_controller_factory: RefreshControllerFactory | None = None,
+        tournament_slug: str | None = None,
+        view_mode: str | ViewMode = ViewMode.MAIN,
+        dashboard_source: DashboardDataSource | None = None,
     ):
         super().__init__()
+        self.view_mode = ViewMode(view_mode)
+        self.tournament_slug = tournament_slug
+        self.dashboard_state: DashboardState | None = None
+        self.dashboard_source: DashboardDataSource | None = dashboard_source
+        if (
+            self.dashboard_source is None
+            and self.view_mode != ViewMode.MAIN
+            and api is None
+            and api_token
+        ):
+            self.dashboard_source = TournamentDashboardAPI(
+                api_token=api_token,
+                event_id=event_id,
+                event_slug=event_slug,
+                tournament_slug=self.tournament_slug,
+                requested_view=self.view_mode,
+            )
         self.api: TournamentDataSource = api or TournamentAPI(
             api_token,
             event_id,
@@ -192,6 +218,10 @@ class TournamentDisplay(App[None]):
             f"event: {event_id}, slug: {event_slug}, poll_interval: {poll_interval}, "
             f"jsonbin: {jsonbin_id or 'None'}, "
             f"api_source: {type(self.api).__name__}, "
+            "dashboard_source: "
+            f"{type(self.dashboard_source).__name__ if self.dashboard_source else 'None'}, "
+            f"view_mode: {self.view_mode.value}, "
+            f"tournament_slug: {self.tournament_slug or 'None'}, "
             f"alert_source: {type(self.alert_source).__name__ if self.alert_source else 'None'}"
         )
 
@@ -296,6 +326,19 @@ class TournamentDisplay(App[None]):
         """Fetch tournament data from API (async worker)"""
         log("🔄 fetch_tournament_data() STARTED")
         try:
+            if self.dashboard_source is not None:
+                dashboard = await self.dashboard_source.fetch_dashboard_state(
+                    previous_state=self.dashboard_state,
+                )
+                self.dashboard_state = dashboard
+                if dashboard.main is None:
+                    raise Exception("Dashboard state did not include main tournament data")
+                snapshot = build_display_snapshot(dashboard.main)
+                snapshot = replace(snapshot, last_update=dashboard.last_update)
+                self._apply_snapshot(snapshot)
+                self.update_table()
+                return
+
             log("🔄 About to call api.fetch_sets()...")
             data = await self.api.fetch_sets()
             log(

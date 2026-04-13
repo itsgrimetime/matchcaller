@@ -44,15 +44,17 @@ Add a CLI option:
 
 1. Resolve the current tournament from the short URL.
 2. Select the main event using the existing `--event-filter` behavior.
-3. Discover the ladder event from the same tournament.
+3. Discover the ladder event from the same tournament on each refresh until one is found.
 4. Start in main-only view while the ladder event is undiscovered or the ladder visibility rule does not pass.
 5. Switch to split view when the ladder visibility rule passes.
 
 For `--short-url`, the coordinator can discover both the main event and the ladder event from the tournament. For `--slug`, the app should treat the provided slug as the main event and derive the tournament slug from it for ladder discovery. For `--event`, the app can fetch main sets but cannot reliably auto-discover a sibling ladder event unless a tournament slug is also known; in that case `auto` should behave like `main` and log that ladder discovery was skipped because only an event ID was provided.
 
+Ladder discovery should not be a one-time startup step. If no ladder event is found, `auto`, `split`, and `ladder` modes should continue probing on later refreshes so a ladder created or exposed after the TUI starts can still appear without rebooting the Pi.
+
 `main` keeps today's behavior: fetch and display only the selected main event.
 
-`split` is an explicit two-panel mode. If the ladder is not active yet, it should show the same main bracket content with a small waiting/not-started ladder status rather than failing.
+`split` is an explicit two-panel mode. It should always keep the main bracket visible and render the ladder side according to `LadderDisplayStatus` rather than failing when the ladder is not found, waiting, or completed.
 
 `ladder` is for a dedicated second device. It should auto-discover the ladder event, show a waiting state until ladder starts, and switch to the ladder board when the ladder visibility rule passes. If the event is already `COMPLETED` on a fresh launch, ladder-only mode can render a completed ladder board with final standings instead of waiting forever.
 
@@ -60,7 +62,24 @@ For `--short-url`, the coordinator can discover both the main event and the ladd
 
 ## Ladder Activation
 
-A discovered ladder should be considered visible when any of these are true:
+Track ladder state separately from whether `auto` should promote the split view:
+
+```text
+LadderDisplayStatus = not_found | waiting | active | completed
+```
+
+Use these statuses:
+
+- `not_found`: no ladder event discovered yet
+- `waiting`: ladder discovered, but not started and no active sets
+- `active`: `Event.state == ACTIVE`, or `Event.state` is not `COMPLETED` or `INVALID` and active sets exist in states `[1, 2, 6]`
+- `completed`: `Event.state == COMPLETED`
+
+`auto` should switch from main-only to split when ladder status becomes `active`. It should not switch to split on a fresh launch if the ladder is already `completed`. If the app already showed the ladder as active during the current process and a later refresh reports `completed`, it can keep the split view and render final standings instead of making the ladder disappear.
+
+Explicit `split` and `ladder` modes should render their ladder area based on `LadderDisplayStatus`: `not_found` means keep probing and show a not-found-yet panel, `waiting` means show a waiting panel, `active` means show live ladder, and `completed` means show the completed ladder board with standings when available.
+
+The active status should be set when any of these are true:
 
 - `Event.state == ACTIVE`
 - `Event.state` is not `COMPLETED` or `INVALID`, and the ladder has active sets in states `[1, 2, 6]`
@@ -96,6 +115,7 @@ DashboardState
   ladder: LadderState | None
   stations: StationState | None
   resolved_view: main|split|ladder
+  ladder_was_visible: bool
   last_update: str
 
 LadderState
@@ -107,7 +127,8 @@ LadderState
   entrants_count: int
   sets: list[MatchData]
   standings: list[LadderStanding]
-  is_visible: bool
+  display_status: not_found|waiting|active|completed
+  auto_should_show: bool
   waiting_reason: str | None
 
 LadderStanding
@@ -163,11 +184,11 @@ Ladder waiting view should show:
 
 If no ladder event is discovered:
 
-- `auto`: stay main-only and log that no ladder event was found
-- `split`: show main bracket plus a small "No ladder event found" ladder panel
-- `ladder`: show a full-screen "No ladder event found" state
+- `auto`: stay main-only, log that no ladder event was found on this refresh, and keep probing on later refreshes
+- `split`: show main bracket plus a small "No ladder event found yet" ladder panel, and keep probing on later refreshes
+- `ladder`: show a full-screen "Looking for ladder event" state, and keep probing on later refreshes
 
-If ladder is discovered but not active:
+If ladder is discovered with `waiting` status:
 
 - `auto`: stay main-only
 - `split`: show main bracket plus waiting ladder panel
@@ -184,8 +205,11 @@ Add unit tests for:
 - ladder discovery by name containing `ladder`
 - ladder discovery validation by `MATCHMAKING` phase/group
 - no-ladder tournament behavior
+- ladder rediscovery continues after a no-ladder refresh
 - activation from `Event.state == ACTIVE`
 - activation fallback from active sets when the event is not completed or invalid
+- completed ladder is renderable for explicit ladder mode but does not activate `auto` on a fresh launch
+- `auto` can keep split view after a ladder that was already visible becomes completed
 - entrant count alone does not activate ladder visibility
 - standings alone do not activate ladder visibility
 - event ID-only launches skip ladder discovery unless a tournament slug is also known

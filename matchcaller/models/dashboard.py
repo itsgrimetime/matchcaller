@@ -89,7 +89,6 @@ class DashboardState(DictCompatibleBaseModel):
 
 
 def derive_ladder_display_status(
-    *,
     event_state: str | None,
     active_set_count: int,
 ) -> LadderDisplayStatus:
@@ -102,7 +101,7 @@ def derive_ladder_display_status(
         return LadderDisplayStatus.COMPLETED
     if normalized_state == "ACTIVE":
         return LadderDisplayStatus.ACTIVE
-    if active_set_count > 0:
+    if normalized_state != "INVALID" and active_set_count > 0:
         return LadderDisplayStatus.ACTIVE
     return LadderDisplayStatus.WAITING
 
@@ -129,7 +128,6 @@ def resolve_dashboard_view(
 
 
 def derive_station_state(
-    *,
     stations: Sequence[Station],
     active_matches: Sequence[MatchRow],
 ) -> StationState:

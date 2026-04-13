@@ -62,6 +62,10 @@ class TestDashboardModels:
             event_state="COMPLETED",
             active_set_count=2,
         ) == LadderDisplayStatus.COMPLETED
+        assert derive_ladder_display_status(
+            event_state="INVALID",
+            active_set_count=1,
+        ) == LadderDisplayStatus.WAITING
 
     def test_auto_does_not_promote_completed_fresh_launch_but_keeps_visible_ladder(self):
         completed = LadderState(
@@ -155,3 +159,4 @@ class TestDashboardModels:
         assert dashboard.main is main
         assert dashboard.ladder is None
         assert dashboard.resolved_view == ViewMode.MAIN
+        assert dashboard.ladder_was_visible is False

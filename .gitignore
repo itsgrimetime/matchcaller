@@ -211,3 +211,4 @@ simulator_data/
 snapshot_report.html
 start-gg.token
 .superpowers/
+.worktrees/

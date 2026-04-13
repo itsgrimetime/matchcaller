@@ -34,6 +34,10 @@ def _result(json_data: dict) -> HTTPResult:
     return HTTPResult(status=200, text="", json_data=json_data)
 
 
+def _http_error(status: int = 500) -> HTTPResult:
+    return HTTPResult(status=status, text="station service unavailable", json_data=None)
+
+
 def _event_sets_payload(event_name: str = "Singles") -> dict:
     return {
         "data": {
@@ -274,3 +278,29 @@ class TestTournamentDashboardAPI:
         assert dashboard.resolved_view == ViewMode.MAIN
         assert dashboard.ladder is None
         assert len(transport.post_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_station_failure_returns_dashboard_without_station_state(self):
+        transport = FakeTransport(
+            [
+                _result(_event_sets_payload()),
+                _result(_discovery_payload(ladder_state="ACTIVE")),
+                _result(_ladder_detail_payload(event_state="ACTIVE", active_sets=[])),
+                _http_error(),
+            ]
+        )
+        api = TournamentDashboardAPI(
+            api_token="token",
+            event_id="12345",
+            tournament_slug="weekly",
+            requested_view=ViewMode.AUTO,
+            transport=transport,
+        )
+
+        dashboard = await api.fetch_dashboard_state()
+
+        assert dashboard.main is not None
+        assert dashboard.ladder is not None
+        assert dashboard.ladder.display_status == LadderDisplayStatus.ACTIVE
+        assert dashboard.resolved_view == ViewMode.SPLIT
+        assert dashboard.stations is None

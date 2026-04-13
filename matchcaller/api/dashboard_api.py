@@ -21,6 +21,7 @@ from matchcaller.models.dashboard import (
     resolve_dashboard_view,
 )
 from matchcaller.models.match import MatchData, MatchRow, PlayerData, TournamentState
+from matchcaller.utils.logging import log
 
 from .parsers import parse_event_sets_response, validate_startgg_response
 from .queries import (
@@ -96,7 +97,10 @@ class TournamentDashboardAPI:
             active_sets = list(main.sets)
             if ladder:
                 active_sets.extend(ladder.sets)
-            stations = await self._fetch_station_state(active_sets)
+            try:
+                stations = await self._fetch_station_state(active_sets)
+            except Exception as exc:
+                log(f"Station state fetch failed; continuing without stations: {exc}")
 
         ladder_was_visible = bool(
             previous_state

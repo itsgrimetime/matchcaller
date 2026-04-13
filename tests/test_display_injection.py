@@ -48,6 +48,14 @@ class StubDashboardSource:
         return self.snapshots[index]
 
 
+class StubDashboardGrid:
+    def __init__(self) -> None:
+        self.reset_calls = 0
+
+    def reset(self) -> None:
+        self.reset_calls += 1
+
+
 class PassiveRefreshController(RefreshController):
     """Refresh controller variant that skips background timers in tests."""
 
@@ -215,3 +223,75 @@ class TestDisplayInjection:
             assert app.query_one("#dashboard-container")
             assert app.query_one("#main-dashboard-table")
             assert app.query_one("#ladder-dashboard-table")
+
+    @pytest.mark.asyncio
+    async def test_ladder_dashboard_mounts_dashboard_container(self):
+        from matchcaller.models.dashboard import (
+            DashboardState,
+            LadderDisplayStatus,
+            LadderState,
+            LadderStanding,
+            ViewMode,
+        )
+
+        dashboard_state = DashboardState(
+            tournament_name="Injected Tournament",
+            main=_single_match_state(state=2),
+            ladder=LadderState(
+                display_status=LadderDisplayStatus.ACTIVE,
+                event_name="Injected Ladder",
+                event_state="ACTIVE",
+                sets=[],
+                standings=[
+                    LadderStanding(
+                        placement=1,
+                        entrant_name="Alice",
+                        wins=3,
+                        losses=0,
+                    )
+                ],
+                auto_should_show=True,
+            ),
+            stations=None,
+            requested_view=ViewMode.LADDER,
+            resolved_view=ViewMode.LADDER,
+            ladder_was_visible=True,
+            last_update="12:00:00",
+        )
+        source = StubDashboardSource([dashboard_state])
+        app = TournamentDisplay(
+            view_mode="ladder",
+            dashboard_source=source,
+            poll_interval=999.0,
+            refresh_controller_factory=passive_refresh_controller_factory,
+        )
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.5)
+
+            assert app.query_one("#dashboard-container")
+            assert app.query_one("#ladder-dashboard-table")
+            assert app.query_one("#ladder-standings-table")
+
+    def test_loading_state_resets_injected_dashboard_grid(self):
+        dashboard_grid = StubDashboardGrid()
+        app = TournamentDisplay(
+            dashboard_grid=dashboard_grid,
+            poll_interval=999.0,
+            refresh_controller_factory=passive_refresh_controller_factory,
+        )
+        app.dashboard_state = DashboardState(
+            tournament_name="Injected Tournament",
+            main=_single_match_state(state=2),
+            ladder=None,
+            stations=None,
+            requested_view=ViewMode.AUTO,
+            resolved_view=ViewMode.MAIN,
+            ladder_was_visible=False,
+            last_update="12:00:00",
+        )
+
+        app.show_loading_state()
+
+        assert app.dashboard_state is None
+        assert dashboard_grid.reset_calls == 1

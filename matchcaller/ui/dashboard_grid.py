@@ -14,7 +14,9 @@ from ..models.dashboard import (
     filter_late_bracket_matches,
 )
 from ..models.match import MatchRow
-from .presentation import build_match_row, sort_pool_matches
+from .presentation import build_match_row, calculate_column_widths, sort_pool_matches
+
+DashboardMatchWidths = tuple[int, int, int]
 
 
 def build_station_summary(stations: StationState | None) -> str:
@@ -41,6 +43,14 @@ def build_standings_rows(ladder: LadderState | None) -> list[list[str]]:
     ]
 
 
+def calculate_dashboard_match_widths(
+    *,
+    container_width: int,
+    split_tables: int,
+) -> DashboardMatchWidths:
+    return calculate_column_widths(container_width, split_tables)
+
+
 class DashboardGridManager:
     """Own dashboard-specific Textual layout rendering."""
 
@@ -54,20 +64,33 @@ class DashboardGridManager:
         dashboard: DashboardState,
         alerts: AlertData,
     ) -> None:
+        split_tables = 2 if dashboard.resolved_view == ViewMode.SPLIT else 1
+        column_widths = calculate_dashboard_match_widths(
+            container_width=container.size.width or 80,
+            split_tables=split_tables,
+        )
         with container.app.batch_update():
             await container.remove_children()
-            await container.mount(self._build_dashboard(dashboard, alerts))
+            await container.mount(
+                self._build_dashboard(dashboard, alerts, column_widths)
+            )
 
     def _build_dashboard(
         self,
         dashboard: DashboardState,
         alerts: AlertData,
+        column_widths: DashboardMatchWidths,
     ) -> Horizontal | Vertical:
         if dashboard.resolved_view == ViewMode.LADDER:
-            return self._build_ladder_only(dashboard)
-        return self._build_split(dashboard, alerts)
+            return self._build_ladder_only(dashboard, column_widths)
+        return self._build_split(dashboard, alerts, column_widths)
 
-    def _build_split(self, dashboard: DashboardState, alerts: AlertData) -> Horizontal:
+    def _build_split(
+        self,
+        dashboard: DashboardState,
+        alerts: AlertData,
+        column_widths: DashboardMatchWidths,
+    ) -> Horizontal:
         main_table = self._match_table(
             "main-dashboard-table",
             [
@@ -83,6 +106,7 @@ class DashboardGridManager:
                     ]
                 )
             ],
+            column_widths,
         )
         ladder_table = self._match_table(
             "ladder-dashboard-table",
@@ -92,6 +116,7 @@ class DashboardGridManager:
                     for set_data in (dashboard.ladder.sets if dashboard.ladder else [])
                 ]
             ),
+            column_widths,
         )
         standings_table = self._standings_table(dashboard.ladder)
         return Horizontal(
@@ -110,7 +135,11 @@ class DashboardGridManager:
             id="dashboard-container",
         )
 
-    def _build_ladder_only(self, dashboard: DashboardState) -> Vertical:
+    def _build_ladder_only(
+        self,
+        dashboard: DashboardState,
+        column_widths: DashboardMatchWidths,
+    ) -> Vertical:
         ladder_table = self._match_table(
             "ladder-dashboard-table",
             build_ladder_rows(
@@ -119,6 +148,7 @@ class DashboardGridManager:
                     for set_data in (dashboard.ladder.sets if dashboard.ladder else [])
                 ]
             ),
+            column_widths,
         )
         return Vertical(
             Static(_ladder_title(dashboard.ladder), classes="pool-title"),
@@ -132,11 +162,13 @@ class DashboardGridManager:
         self,
         table_id: str,
         rows: Sequence[Sequence[str]],
+        column_widths: DashboardMatchWidths,
     ) -> DataTable[str]:
+        match_width, status_width, duration_width = column_widths
         table: DataTable[str] = DataTable(id=table_id, classes="pool-table")
-        table.add_column("Match", key="match", width=26)
-        table.add_column("Status", key="status", width=16)
-        table.add_column("Time", key="duration", width=10)
+        table.add_column("Match", key="match", width=match_width)
+        table.add_column("Status", key="status", width=status_width)
+        table.add_column("Time", key="duration", width=duration_width)
         table.cursor_type = "none"
         table.cell_padding = 0
         if rows:

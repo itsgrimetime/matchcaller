@@ -14,6 +14,7 @@ from matchcaller.ui.dashboard_grid import (
     build_ladder_rows,
     build_station_summary,
     build_standings_rows,
+    calculate_dashboard_match_widths,
 )
 
 
@@ -67,3 +68,12 @@ class TestDashboardGridHelpers:
             ["#1", "Snap", "8-0"],
             ["#2", "Chetter", "9-1"],
         ]
+
+    def test_split_dashboard_match_widths_fit_narrow_terminal(self):
+        widths = calculate_dashboard_match_widths(
+            container_width=80,
+            split_tables=2,
+        )
+
+        assert widths != (26, 16, 10)
+        assert sum(widths) <= 30

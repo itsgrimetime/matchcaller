@@ -272,6 +272,7 @@ class TournamentDisplay(App[None]):
         self.last_update = "Loading..."
         self.dashboard_state = None
         self.pool_grid.reset()
+        self.dashboard_grid.reset()
 
         self._replace_pools_with_message(
             "Fetching tournament data from start.gg...",

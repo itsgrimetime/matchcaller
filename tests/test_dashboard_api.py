@@ -6,6 +6,7 @@ from matchcaller.api.dashboard_api import (
     TournamentDashboardAPI,
     derive_tournament_slug_from_event_slug,
 )
+from matchcaller.api.queries import EVENT_ID_BY_SLUG_QUERY, EVENT_SETS_QUERY
 from matchcaller.api.transport import HTTPResult
 from matchcaller.models.dashboard import LadderDisplayStatus, ViewMode
 
@@ -43,6 +44,10 @@ def _event_sets_payload(event_name: str = "Singles") -> dict:
             }
         }
     }
+
+
+def _event_id_payload(event_id: str = "12345") -> dict:
+    return {"data": {"event": {"id": event_id, "name": "Singles"}}}
 
 
 def _discovery_payload(*, ladder_state: str = "CREATED") -> dict:
@@ -166,6 +171,7 @@ class TestTournamentDashboardAPI:
         }
         transport = FakeTransport(
             [
+                _result(_event_id_payload("12345")),
                 _result(_event_sets_payload()),
                 _result(_discovery_payload(ladder_state="ACTIVE")),
                 _result(_ladder_detail_payload(event_state="ACTIVE", active_sets=[active_set])),
@@ -189,11 +195,18 @@ class TestTournamentDashboardAPI:
         assert dashboard.stations is not None
         assert dashboard.stations.occupied_numbers == {2}
         assert dashboard.stations.available_numbers == [1]
+        assert transport.post_calls[0]["payload"]["query"] == EVENT_ID_BY_SLUG_QUERY
+        assert transport.post_calls[0]["payload"]["variables"] == {
+            "slug": "tournament/weekly/event/singles"
+        }
+        assert transport.post_calls[1]["payload"]["query"] == EVENT_SETS_QUERY
+        assert transport.post_calls[1]["payload"]["variables"]["eventId"] == "12345"
 
     @pytest.mark.asyncio
     async def test_fetch_dashboard_keeps_auto_main_when_ladder_not_found_and_retries_next_refresh(self):
         transport = FakeTransport(
             [
+                _result(_event_id_payload("12345")),
                 _result(_event_sets_payload()),
                 _result({"data": {"tournament": {"name": "Weekly", "events": []}}}),
                 _result(_stations_payload()),
@@ -225,6 +238,7 @@ class TestTournamentDashboardAPI:
     async def test_completed_ladder_does_not_promote_auto_on_fresh_launch(self):
         transport = FakeTransport(
             [
+                _result(_event_id_payload("12345")),
                 _result(_event_sets_payload()),
                 _result(_discovery_payload(ladder_state="COMPLETED")),
                 _result(_ladder_detail_payload(event_state="COMPLETED", active_sets=[])),

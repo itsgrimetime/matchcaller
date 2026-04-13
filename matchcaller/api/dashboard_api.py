@@ -62,9 +62,6 @@ class TournamentDashboardAPI:
         self.api_token = api_token
         self.event_id = event_id
         self.event_slug = event_slug
-        self._resolve_event_slug_before_fetch = bool(
-            event_slug and not event_id and not tournament_slug
-        )
         self.tournament_slug = (
             tournament_slug or derive_tournament_slug_from_event_slug(event_slug)
         )
@@ -149,16 +146,12 @@ class TournamentDashboardAPI:
 
     async def _fetch_main_state(self) -> TournamentState:
         """Fetch the primary event state via the existing event-sets parser."""
-        if (
-            self._resolve_event_slug_before_fetch
-            and self.event_slug
-            and not self.event_id
-        ):
+        if self.event_slug and not self.event_id:
             self.event_id = await self._resolve_event_id_from_slug(self.event_slug)
 
-        event_id = self.event_id or self.event_slug
+        event_id = self.event_id
         if not event_id:
-            raise ValueError("Missing event_id or event_slug for dashboard API")
+            raise ValueError("Missing event_id or unresolved event_slug for dashboard API")
 
         raw_data = await self._post_graphql(
             EVENT_SETS_QUERY,

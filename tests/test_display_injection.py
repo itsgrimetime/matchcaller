@@ -174,3 +174,44 @@ class TestDisplayInjection:
             assert source.calls == 1
             assert app.dashboard_state is dashboard_state
             assert app.event_name == "Injected Event"
+
+    @pytest.mark.asyncio
+    async def test_split_dashboard_mounts_dashboard_container(self):
+        from matchcaller.models.dashboard import (
+            DashboardState,
+            LadderDisplayStatus,
+            LadderState,
+            ViewMode,
+        )
+
+        dashboard_state = DashboardState(
+            tournament_name="Injected Tournament",
+            main=_single_match_state(state=2),
+            ladder=LadderState(
+                display_status=LadderDisplayStatus.ACTIVE,
+                event_name="Injected Ladder",
+                event_state="ACTIVE",
+                sets=[],
+                standings=[],
+                auto_should_show=True,
+            ),
+            stations=None,
+            requested_view=ViewMode.AUTO,
+            resolved_view=ViewMode.SPLIT,
+            ladder_was_visible=True,
+            last_update="12:00:00",
+        )
+        source = StubDashboardSource([dashboard_state])
+        app = TournamentDisplay(
+            view_mode="auto",
+            dashboard_source=source,
+            poll_interval=999.0,
+            refresh_controller_factory=passive_refresh_controller_factory,
+        )
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.5)
+
+            assert app.query_one("#dashboard-container")
+            assert app.query_one("#main-dashboard-table")
+            assert app.query_one("#ladder-dashboard-table")

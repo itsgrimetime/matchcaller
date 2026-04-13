@@ -27,6 +27,7 @@ from .dependencies import (
     RefreshControllerFactory,
     TournamentDataSource,
 )
+from .dashboard_grid import DashboardGridManager
 from .pool_grid import PoolGridManager
 from .refresh_controller import (
     DisplaySnapshot,
@@ -165,6 +166,7 @@ class TournamentDisplay(App[None]):
         api: TournamentDataSource | None = None,
         alert_source: AlertSource | None = None,
         pool_grid: PoolGridManager | None = None,
+        dashboard_grid: DashboardGridManager | None = None,
         refresh_controller_factory: RefreshControllerFactory | None = None,
         tournament_slug: str | None = None,
         view_mode: str | ViewMode = ViewMode.MAIN,
@@ -201,6 +203,9 @@ class TournamentDisplay(App[None]):
             poll_interval,
         )
         self.pool_grid: PoolGridManager = pool_grid or PoolGridManager()
+        self.dashboard_grid: DashboardGridManager = (
+            dashboard_grid or DashboardGridManager()
+        )
         self.matches: list[MatchRow] = []
         # Set initial title - will be updated when tournament data is loaded
         self.title = "Loading Tournament..."
@@ -265,6 +270,7 @@ class TournamentDisplay(App[None]):
         self.ready_sets = 0
         self.in_progress_sets = 0
         self.last_update = "Loading..."
+        self.dashboard_state = None
         self.pool_grid.reset()
 
         self._replace_pools_with_message(
@@ -444,6 +450,27 @@ class TournamentDisplay(App[None]):
         finally:
             self.refresh_controller.finish_ui_mutation(flush_update=self.update_table)
 
+    def rebuild_dashboard(self) -> None:
+        if self.dashboard_state is None:
+            return
+        self.refresh_controller.begin_ui_mutation()
+        self.run_worker(
+            self._rebuild_dashboard_async(self.dashboard_state),
+            group="ui",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _rebuild_dashboard_async(self, dashboard: DashboardState) -> None:
+        try:
+            pools_container = self._get_pools_container()
+            await self.dashboard_grid.rebuild(pools_container, dashboard, self.alerts)
+        except Exception as e:
+            log(f"❌ Error during rebuild_dashboard: {e}")
+            self.pool_grid.reset()
+        finally:
+            self.refresh_controller.finish_ui_mutation(flush_update=self.update_table)
+
     def update_table(self) -> None:
         """Update the matches display with vertical pool columns"""
         log(f"🔄 update_table() called with {len(self.matches)} matches")
@@ -453,6 +480,13 @@ class TournamentDisplay(App[None]):
             return
 
         pools_container = self._get_pools_container()
+
+        if (
+            self.dashboard_state is not None
+            and self.dashboard_state.resolved_view != ViewMode.MAIN
+        ):
+            self.rebuild_dashboard()
+            return
 
         if not self.matches:
             log("⚠️  No matches to display")
@@ -521,6 +555,12 @@ class TournamentDisplay(App[None]):
     def update_display(self) -> None:
         """Update time-dependent displays (called every second)"""
         if not self.matches or self.refresh_controller.ui_busy:
+            return
+
+        if (
+            self.dashboard_state is not None
+            and self.dashboard_state.resolved_view != ViewMode.MAIN
+        ):
             return
 
         # Update duration timers every second by updating just the duration column

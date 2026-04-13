@@ -119,10 +119,10 @@ DashboardState
   last_update: str
 
 LadderState
-  event_id: str
-  event_name: str
-  event_slug: str
-  event_state: str
+  event_id: str | None
+  event_name: str | None
+  event_slug: str | None
+  event_state: str | None
   start_at: int | None
   entrants_count: int
   sets: list[MatchData]

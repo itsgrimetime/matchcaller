@@ -2,6 +2,7 @@
 
 import pytest
 
+import matchcaller.models as models
 from matchcaller.models.dashboard import (
     DashboardState,
     LadderDisplayStatus,
@@ -41,6 +42,18 @@ def _match(
 
 @pytest.mark.unit
 class TestDashboardModels:
+    def test_ladder_standing_record_text_handles_missing_and_present_values(self):
+        assert LadderStanding(placement=1, entrant_name="Snap").record_text == "-"
+        assert (
+            LadderStanding(
+                placement=2,
+                entrant_name="Spark",
+                wins=7,
+                losses=3,
+            ).record_text
+            == "7-3"
+        )
+
     def test_ladder_status_not_found_waiting_active_completed(self):
         assert derive_ladder_display_status(
             event_state=None,
@@ -93,6 +106,22 @@ class TestDashboardModels:
         ) == ViewMode.SPLIT
         assert resolve_dashboard_view(ViewMode.AUTO, completed, True) == ViewMode.SPLIT
 
+    def test_auto_resolves_to_split_for_active_ladder(self):
+        active = LadderState(
+            display_status=LadderDisplayStatus.ACTIVE,
+            event_id="1",
+            event_name="Melee Ladder",
+            event_slug="tournament/test/event/ladder",
+            event_state="ACTIVE",
+            start_at=1776229200,
+            entrants_count=12,
+            sets=[],
+            standings=[],
+            auto_should_show=True,
+        )
+
+        assert resolve_dashboard_view(ViewMode.AUTO, active) == ViewMode.SPLIT
+
     def test_explicit_modes_resolve_without_auto_promotion(self):
         waiting = LadderState(
             display_status=LadderDisplayStatus.WAITING,
@@ -116,7 +145,7 @@ class TestDashboardModels:
             stations=[
                 Station(id="s1", number=1),
                 Station(id="s2", number=2),
-                Station(id="s3", number=3),
+                Station(id="s3", number=3, enabled=False),
             ],
             active_matches=[
                 _match(1, display_name="Top 24 - WQ", pool_name="Top 24", station=2),
@@ -125,7 +154,19 @@ class TestDashboardModels:
         )
 
         assert state.occupied_numbers == {2}
-        assert state.available_numbers == [1, 3]
+        assert state.available_numbers == [1]
+
+    def test_disabled_stations_are_ignored_for_availability(self):
+        state = derive_station_state(
+            stations=[
+                Station(id="s1", number=1, enabled=False),
+                Station(id="s2", number=2, enabled=True),
+            ],
+            active_matches=[],
+        )
+
+        assert state.available_numbers == [2]
+        assert [station.number for station in state.stations] == [1, 2]
 
     def test_filter_late_bracket_matches_prefers_top_24_and_top_8(self):
         matches = [
@@ -161,3 +202,11 @@ class TestDashboardModels:
         assert dashboard.ladder is None
         assert dashboard.resolved_view == ViewMode.MAIN
         assert dashboard.ladder_was_visible is False
+
+    def test_models_package_exports_dashboard_types(self):
+        assert "DashboardState" in models.__all__
+        assert "LadderStanding" in models.__all__
+        assert "StationState" in models.__all__
+        assert models.DashboardState is DashboardState
+        assert models.LadderStanding is LadderStanding
+        assert models.ViewMode is ViewMode

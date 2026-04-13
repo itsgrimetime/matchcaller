@@ -40,31 +40,36 @@ Add a CLI option:
 --view auto|main|split|ladder
 ```
 
-`auto` should be the default when launching with `--short-url abbey`. It should preserve current startup ergonomics while supporting ladder without intervention:
+`auto` should be the default for real-data launches. It should preserve current startup ergonomics while supporting ladder without intervention:
 
 1. Resolve the current tournament from the short URL.
 2. Select the main event using the existing `--event-filter` behavior.
 3. Discover the ladder event from the same tournament.
-4. Start in main-only view while the ladder event is undiscovered or not active.
-5. Switch to split view when the ladder is active or has live data.
+4. Start in main-only view while the ladder event is undiscovered or the ladder visibility rule does not pass.
+5. Switch to split view when the ladder visibility rule passes.
+
+For `--short-url`, the coordinator can discover both the main event and the ladder event from the tournament. For `--slug`, the app should treat the provided slug as the main event and derive the tournament slug from it for ladder discovery. For `--event`, the app can fetch main sets but cannot reliably auto-discover a sibling ladder event unless a tournament slug is also known; in that case `auto` should behave like `main` and log that ladder discovery was skipped because only an event ID was provided.
 
 `main` keeps today's behavior: fetch and display only the selected main event.
 
 `split` is an explicit two-panel mode. If the ladder is not active yet, it should show the same main bracket content with a small waiting/not-started ladder status rather than failing.
 
-`ladder` is for a dedicated second device. It should auto-discover the ladder event, show a waiting state until ladder starts, and switch to the ladder board when active or populated.
+`ladder` is for a dedicated second device. It should auto-discover the ladder event, show a waiting state until ladder starts, and switch to the ladder board when the ladder visibility rule passes. If the event is already `COMPLETED` on a fresh launch, ladder-only mode can render a completed ladder board with final standings instead of waiting forever.
+
+`--demo` and `--simulate` should preserve their current behavior unless a later fixture/simulator task explicitly adds ladder fixtures. If `--view ladder` or `--view split` is passed with demo or simulation mode before ladder fixtures exist, the app should log that ladder view is unsupported for that mode and fall back to the existing demo/simulation display.
 
 ## Ladder Activation
 
 A discovered ladder should be considered visible when any of these are true:
 
 - `Event.state == ACTIVE`
-- The ladder has active sets in states `[1, 2, 6]`
-- The ladder has standings
+- `Event.state` is not `COMPLETED` or `INVALID`, and the ladder has active sets in states `[1, 2, 6]`
 
-If the ladder event is `CREATED` and has no active sets or standings, `auto` stays main-only and `ladder` mode shows a waiting screen with the discovered event name and scheduled `startAt` if available.
+If the ladder event is `CREATED` and has no active sets, `auto` stays main-only and `ladder` mode shows a waiting screen with the discovered event name and scheduled `startAt` if available.
 
 Entrant count should be fetched for display, but it should not make the ladder visible by itself. This avoids showing the ladder early if entrants are added before the TOs mark the ladder live.
+
+Standings should be rendered once a ladder is already visible, or in explicit ladder views for a completed ladder, but standings should not activate `auto` by themselves. Completed ladders still expose standings, so using standings as a visibility signal would make a fresh `auto` launch after the event promote an already-finished ladder.
 
 This avoids relying on scheduled time alone. The ladder may be scheduled for a nominal time but should not appear in the main display until the TOs actually start using it.
 
@@ -180,8 +185,11 @@ Add unit tests for:
 - ladder discovery validation by `MATCHMAKING` phase/group
 - no-ladder tournament behavior
 - activation from `Event.state == ACTIVE`
-- activation fallback from active sets or standings
+- activation fallback from active sets when the event is not completed or invalid
 - entrant count alone does not activate ladder visibility
+- standings alone do not activate ladder visibility
+- event ID-only launches skip ladder discovery unless a tournament slug is also known
+- demo and simulation modes preserve current behavior when ladder fixtures are unavailable
 - parsing standings W-L records from `setRecordWithoutByes`
 - station availability derivation from station list and active set assignments
 - view resolution for `auto`, `main`, `split`, and `ladder`

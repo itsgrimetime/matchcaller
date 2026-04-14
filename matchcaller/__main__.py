@@ -8,8 +8,8 @@ from .ui import TournamentDisplay
 from .utils.logging import log
 
 
-def _is_abbey_short_url(short_url: str) -> bool:
-    """Return whether a short URL is the Abbey weekly shortcut."""
+def _normalize_short_url(short_url: str) -> str:
+    """Normalize a start.gg short URL into the slug sent to GraphQL."""
     normalized = short_url.strip().rstrip("/").lower()
     for prefix in (
         "https://www.start.gg/",
@@ -22,7 +22,35 @@ def _is_abbey_short_url(short_url: str) -> bool:
         if normalized.startswith(prefix):
             normalized = normalized[len(prefix):]
             break
-    return normalized == "abbey"
+    return normalized
+
+
+def _is_abbey_short_url(short_url: str) -> bool:
+    """Return whether a short URL is the Abbey weekly shortcut."""
+    return _normalize_short_url(short_url) == "abbey"
+
+
+def _choose_event(
+    events: list[dict[str, str]],
+    event_filter: str | None,
+) -> dict[str, str]:
+    """Pick the event matching the user's filter, avoiding waitlists when possible."""
+    chosen = None
+    if event_filter:
+        keyword = event_filter.lower()
+        matches = [
+            ev for ev in events
+            if keyword in ev["name"].lower() or keyword in ev["slug"].lower()
+        ]
+        non_waitlist = [
+            ev for ev in matches
+            if "waitlist" not in ev["name"].lower()
+        ]
+        if non_waitlist:
+            chosen = non_waitlist[0]
+        elif matches:
+            chosen = matches[0]
+    return chosen or events[0]
 
 
 class MatchCallerArgs(argparse.Namespace):
@@ -107,58 +135,54 @@ def main():
     if args.short_url and args.token and not args.slug:
         log(f"🔍 Resolving short URL: {args.short_url}")
         try:
-            from .utils.resolve import resolve_tournament_slug_from_unique_string
             import asyncio
             from .api import TournamentAPI
+            from .api.dashboard_api import derive_tournament_slug_from_event_slug
+            from .utils.resolve import resolve_tournament_slug_from_unique_string
 
             tmp_api = TournamentAPI(api_token=args.token)
+            short_url_slug = _normalize_short_url(args.short_url)
+            tournament_slug = None
 
-            try:
-                tournament_slug = resolve_tournament_slug_from_unique_string(args.short_url)
-            except Exception as resolve_error:
-                if not _is_abbey_short_url(args.short_url):
-                    raise
-                log(f"⚠️  Short URL redirect resolution failed: {resolve_error}")
-                log("🔍 Falling back to start.gg API search for Abbey weekly")
-                tournament_slug = asyncio.run(
-                    tmp_api.find_nearest_abbey_tournament_slug()
-                )
-                if not tournament_slug:
-                    raise RuntimeError(
-                        "Could not find a nearby Melee @ Abbey Tavern tournament "
-                        "via start.gg API search"
-                    ) from resolve_error
-            resolved_tournament_slug = tournament_slug
-            log(f"✅ Resolved tournament slug: {tournament_slug}")
-
-            # Query API for events under this tournament
-            events = asyncio.run(tmp_api.get_events_for_tournament(tournament_slug))
+            events = asyncio.run(tmp_api.get_events_for_tournament(short_url_slug))
+            if events:
+                log(f"✅ Resolved short URL via start.gg API alias: {short_url_slug}")
+            else:
+                try:
+                    tournament_slug = resolve_tournament_slug_from_unique_string(
+                        short_url_slug
+                    )
+                except Exception as resolve_error:
+                    if not _is_abbey_short_url(short_url_slug):
+                        raise
+                    log(f"⚠️  Short URL redirect resolution failed: {resolve_error}")
+                    log("🔍 Falling back to start.gg API search for Abbey weekly")
+                    tournament_slug = asyncio.run(
+                        tmp_api.find_nearest_abbey_tournament_slug()
+                    )
+                    if not tournament_slug:
+                        raise RuntimeError(
+                            "Could not find a nearby Melee @ Abbey Tavern tournament "
+                            "via start.gg API search"
+                        ) from resolve_error
+                events = asyncio.run(tmp_api.get_events_for_tournament(tournament_slug))
 
             if not events:
-                log(f"❌ No events found for tournament: {tournament_slug}")
+                log(
+                    "❌ No events found for tournament: "
+                    f"{tournament_slug or short_url_slug}"
+                )
                 sys.exit(1)
 
-            # Pick the matching event, deprioritizing waitlist/staging events
-            chosen = None
-            if args.event_filter:
-                keyword = args.event_filter.lower()
-                matches = [
-                    ev for ev in events
-                    if keyword in ev["name"].lower() or keyword in ev["slug"].lower()
-                ]
-                # Prefer non-waitlist events
-                non_waitlist = [
-                    ev for ev in matches
-                    if "waitlist" not in ev["name"].lower()
-                ]
-                if non_waitlist:
-                    chosen = non_waitlist[0]
-                elif matches:
-                    chosen = matches[0]
-            if not chosen:
-                chosen = events[0]
-
+            # Pick the matching event, deprioritizing waitlist/staging events.
+            chosen = _choose_event(events, args.event_filter)
             args.slug = chosen["slug"]
+            resolved_tournament_slug = (
+                tournament_slug
+                or derive_tournament_slug_from_event_slug(args.slug)
+                or short_url_slug
+            )
+            log(f"✅ Resolved tournament slug: {resolved_tournament_slug}")
             log(f"✅ Selected event: {chosen['name']} (slug: {args.slug})")
         except Exception as e:
             log(f"❌ Failed to resolve short URL: {e}")

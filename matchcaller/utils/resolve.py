@@ -21,6 +21,10 @@ CACHE_FILE = Path("/tmp/matchcaller_slug_cache.json")
 CACHE_TTL_SECONDS = 3600  # 1 hour cache TTL
 
 
+class SlugResolutionBlockedError(RuntimeError):
+    """Raised when start.gg blocks short URL resolution."""
+
+
 def _load_cache() -> dict:
     """Load the slug cache from disk."""
     try:
@@ -82,6 +86,30 @@ def _extract_slug_from_url(url: str) -> Optional[str]:
     return slug_part if slug_part else None
 
 
+def _is_cloudflare_challenge(response: requests.Response) -> bool:
+    """Return whether a response is a Cloudflare challenge page."""
+    headers = {key.lower(): value for key, value in response.headers.items()}
+    if headers.get("cf-mitigated", "").lower() == "challenge":
+        return True
+    if response.status_code != 403:
+        return False
+    text = getattr(response, "text", "").lower()
+    return "just a moment" in text or "cf-chl" in text
+
+
+def _raise_if_blocked(response: requests.Response, unique_string: str) -> None:
+    """Raise a useful error if start.gg served a bot/challenge response."""
+    if not _is_cloudflare_challenge(response):
+        return
+
+    raise SlugResolutionBlockedError(
+        f"start.gg blocked short URL resolution for '{unique_string}' with a "
+        f"Cloudflare challenge (HTTP {response.status_code} at {response.url}). "
+        "Try again later, or bypass short URL resolution with --slug "
+        "tournament/<tournament-slug>/event/<event-slug>."
+    )
+
+
 def _resolve_via_head_request(unique_string: str) -> Optional[str]:
     """Try to resolve using HTTP HEAD request (lower bandwidth)."""
     try:
@@ -93,6 +121,7 @@ def _resolve_via_head_request(unique_string: str) -> Optional[str]:
                 "User-Agent": "Mozilla/5.0 (compatible; MatchCaller/1.0)",
             },
         )
+        _raise_if_blocked(response, unique_string)
         if response.status_code == 200:
             return _extract_slug_from_url(response.url)
     except requests.RequestException:
@@ -125,6 +154,7 @@ def _resolve_via_get_request(unique_string: str, use_browser_headers: bool = Fal
             timeout=15,
             headers=headers,
         )
+        _raise_if_blocked(response, unique_string)
         if response.status_code == 200:
             return _extract_slug_from_url(response.url)
     except requests.RequestException:
@@ -148,6 +178,7 @@ def _resolve_via_manual_redirects(unique_string: str) -> Optional[str]:
                 allow_redirects=False,
                 timeout=10,
             )
+            _raise_if_blocked(response, unique_string)
 
             # If we got a successful response, check the URL
             if response.status_code == 200:
@@ -168,6 +199,7 @@ def _resolve_via_manual_redirects(unique_string: str) -> Optional[str]:
                 if slug:
                     # Do one more request to confirm it's valid
                     final_response = session.get(current_url, allow_redirects=True, timeout=10)
+                    _raise_if_blocked(final_response, unique_string)
                     if final_response.status_code == 200:
                         return _extract_slug_from_url(final_response.url)
             else:
@@ -219,7 +251,7 @@ def resolve_tournament_slug_from_unique_string(
         ("Manual redirects", lambda: _resolve_via_manual_redirects(unique_string)),
     ]
 
-    last_error = None
+    last_error: Exception | None = None
 
     for _strategy_name, strategy_func in strategies:
         for attempt in range(max_retries):
@@ -237,9 +269,17 @@ def resolve_tournament_slug_from_unique_string(
             if attempt < max_retries - 1:
                 time.sleep(0.5 * (2 ** attempt))
 
+    if last_error:
+        detail = str(last_error)
+    else:
+        detail = (
+            "No strategy returned a tournament URL. start.gg may have changed "
+            "redirect behavior, the short URL may be invalid, or a blocking "
+            "page may have hidden the redirect."
+        )
     raise RuntimeError(
         f"Failed to resolve slug for '{unique_string}' after trying all strategies. "
-        f"Last error: {last_error}"
+        f"{detail}"
     )
 
 

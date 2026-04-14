@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import re
+import time
 
 import aiohttp
 
@@ -14,9 +16,39 @@ from .parsers import (
     parse_tournament_events_payload,
     validate_startgg_response,
 )
-from .queries import EVENT_ID_BY_SLUG_QUERY, EVENT_SETS_QUERY, TOURNAMENT_EVENTS_QUERY
+from .queries import (
+    EVENT_ID_BY_SLUG_QUERY,
+    EVENT_SETS_QUERY,
+    TOURNAMENT_EVENTS_QUERY,
+    TOURNAMENT_SEARCH_QUERY,
+)
 from .transport import AiohttpTransport, HTTPTransport
 from ..utils.logging import log
+
+
+_ABBEY_NAME_RE = re.compile(r"^Melee @ Abbey Tavern #\d+$", re.IGNORECASE)
+_ABBEY_SLUG_RE = re.compile(r"^(?:tournament/)?(melee-abbey-tavern-\d+)$", re.IGNORECASE)
+
+
+def _parse_abbey_search_candidate(
+    node: dict,
+    now: int,
+) -> tuple[tuple[int, int], str, str] | None:
+    """Parse and rank a tournament search result if it is an Abbey weekly."""
+    name = str(node.get("name") or "")
+    slug = str(node.get("slug") or "")
+    slug_match = _ABBEY_SLUG_RE.match(slug)
+    if not _ABBEY_NAME_RE.match(name) and slug_match is None:
+        return None
+
+    start_at = node.get("startAt")
+    if not isinstance(start_at, int):
+        return None
+
+    tournament_slug = slug_match.group(1) if slug_match else slug.removeprefix("tournament/")
+    # Prefer the closest date; if two are equally close, prefer the future event.
+    rank = (abs(start_at - now), 0 if start_at >= now else 1)
+    return rank, tournament_slug, name or tournament_slug
 
 
 class TournamentAPI:
@@ -235,6 +267,68 @@ class TournamentAPI:
         except Exception as e:
             log(f"❌ Error fetching tournament events: {type(e).__name__}: {e}")
             return []
+
+    async def find_nearest_abbey_tournament_slug(
+        self,
+        *,
+        now: int | None = None,
+        day_window: int = 30,
+    ) -> str | None:
+        """Find the Abbey weekly tournament slug nearest to now via GraphQL search."""
+        if now is None:
+            now = int(time.time())
+        variables = {
+            "name": "abbey",
+            "after": now - day_window * 24 * 60 * 60,
+            "before": now + day_window * 24 * 60 * 60,
+        }
+
+        try:
+            log(
+                "🔍 Searching start.gg API for nearest Melee @ Abbey Tavern "
+                f"tournament within ±{day_window} days"
+            )
+            response = await self.transport.post_json(
+                self.base_url,
+                payload={"query": TOURNAMENT_SEARCH_QUERY, "variables": variables},
+                headers=self._headers(),
+                timeout_seconds=10,
+            )
+            if response.status != 200:
+                error_text = response.text or str(response.json_data)
+                log(f"❌ HTTP Error searching tournaments: {error_text}")
+                return None
+
+            if not isinstance(response.json_data, dict):
+                log("❌ Tournament search endpoint returned a non-JSON response")
+                return None
+
+            raw_data = response.json_data
+            if raw_data.get("errors"):
+                log(f"❌ GraphQL errors searching tournaments: {raw_data['errors']}")
+                return None
+
+            nodes = (
+                ((raw_data.get("data") or {}).get("tournaments") or {}).get("nodes")
+                or []
+            )
+            candidates = [
+                candidate
+                for node in nodes
+                if (candidate := _parse_abbey_search_candidate(node, now)) is not None
+            ]
+            if not candidates:
+                log("❌ No Melee @ Abbey Tavern tournament candidates found")
+                return None
+
+            candidates.sort(key=lambda candidate: candidate[0])
+            _, tournament_slug, tournament_name = candidates[0]
+            log(f"✅ Found nearest Abbey tournament: {tournament_name} ({tournament_slug})")
+            return tournament_slug
+
+        except Exception as e:
+            log(f"❌ Error searching Abbey tournaments: {type(e).__name__}: {e}")
+            return None
 
     async def get_event_id_from_slug(self, event_slug: str) -> str | None:
         """Get event ID from event slug (e.g., 'tournament/the-c-stick-55/event/melee-singles')"""

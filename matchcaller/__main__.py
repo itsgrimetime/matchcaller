@@ -8,6 +8,23 @@ from .ui import TournamentDisplay
 from .utils.logging import log
 
 
+def _is_abbey_short_url(short_url: str) -> bool:
+    """Return whether a short URL is the Abbey weekly shortcut."""
+    normalized = short_url.strip().rstrip("/").lower()
+    for prefix in (
+        "https://www.start.gg/",
+        "https://start.gg/",
+        "http://www.start.gg/",
+        "http://start.gg/",
+        "www.start.gg/",
+        "start.gg/",
+    ):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix):]
+            break
+    return normalized == "abbey"
+
+
 class MatchCallerArgs(argparse.Namespace):
     token: str | None = None
     event: str | None = None
@@ -91,17 +108,30 @@ def main():
         log(f"🔍 Resolving short URL: {args.short_url}")
         try:
             from .utils.resolve import resolve_tournament_slug_from_unique_string
+            import asyncio
+            from .api import TournamentAPI
 
-            tournament_slug = resolve_tournament_slug_from_unique_string(args.short_url)
+            tmp_api = TournamentAPI(api_token=args.token)
+
+            try:
+                tournament_slug = resolve_tournament_slug_from_unique_string(args.short_url)
+            except Exception as resolve_error:
+                if not _is_abbey_short_url(args.short_url):
+                    raise
+                log(f"⚠️  Short URL redirect resolution failed: {resolve_error}")
+                log("🔍 Falling back to start.gg API search for Abbey weekly")
+                tournament_slug = asyncio.run(
+                    tmp_api.find_nearest_abbey_tournament_slug()
+                )
+                if not tournament_slug:
+                    raise RuntimeError(
+                        "Could not find a nearby Melee @ Abbey Tavern tournament "
+                        "via start.gg API search"
+                    ) from resolve_error
             resolved_tournament_slug = tournament_slug
             log(f"✅ Resolved tournament slug: {tournament_slug}")
 
             # Query API for events under this tournament
-            import asyncio
-
-            from .api import TournamentAPI
-
-            tmp_api = TournamentAPI(api_token=args.token)
             events = asyncio.run(tmp_api.get_events_for_tournament(tournament_slug))
 
             if not events:

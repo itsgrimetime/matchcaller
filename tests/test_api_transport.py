@@ -183,6 +183,59 @@ class TestTransportInjection:
         ]
 
     @pytest.mark.asyncio
+    async def test_find_nearest_abbey_tournament_slug_uses_search_results(self):
+        now = 1_776_000_000
+        transport = FakeTransport(
+            post_results=[
+                HTTPResult(
+                    status=200,
+                    text='{"data":{"tournaments":{"nodes":[]}}}',
+                    json_data={
+                        "data": {
+                            "tournaments": {
+                                "nodes": [
+                                    {
+                                        "id": 1,
+                                        "name": "Not Abbey",
+                                        "slug": "tournament/not-abbey",
+                                        "startAt": now + 1,
+                                    },
+                                    {
+                                        "id": 2,
+                                        "name": "Melee @ Abbey Tavern #136",
+                                        "slug": "tournament/melee-abbey-tavern-136",
+                                        "startAt": now - 100,
+                                    },
+                                    {
+                                        "id": 3,
+                                        "name": "Melee @ Abbey Tavern #137",
+                                        "slug": "tournament/melee-abbey-tavern-137",
+                                        "startAt": now + 50,
+                                    },
+                                    {
+                                        "id": 4,
+                                        "name": "Melee @ Abbey Tavern #138",
+                                        "slug": "tournament/melee-abbey-tavern-138",
+                                        "startAt": now + 150,
+                                    },
+                                ]
+                            }
+                        }
+                    },
+                )
+            ]
+        )
+        api = TournamentAPI(api_token="test_token", transport=transport)
+
+        result = await api.find_nearest_abbey_tournament_slug(now=now)
+
+        assert result == "melee-abbey-tavern-137"
+        variables = transport.post_calls[0]["payload"]["variables"]
+        assert variables["name"] == "abbey"
+        assert variables["after"] == now - 30 * 24 * 60 * 60
+        assert variables["before"] == now + 30 * 24 * 60 * 60
+
+    @pytest.mark.asyncio
     async def test_jsonbin_api_uses_injected_transport(self):
         transport = FakeTransport(
             get_results=[

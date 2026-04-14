@@ -69,6 +69,31 @@ query TournamentEvents($slug: String!) {
 """
 
 
+TOURNAMENT_SEARCH_QUERY = """
+query SearchTournaments($name: String!, $after: Timestamp!, $before: Timestamp!) {
+    tournaments(
+        query: {
+            page: 1
+            perPage: 50
+            sortBy: "startAt"
+            filter: {
+                name: $name
+                afterDate: $after
+                beforeDate: $before
+            }
+        }
+    ) {
+        nodes {
+            id
+            name
+            slug
+            startAt
+        }
+    }
+}
+"""
+
+
 EVENT_ID_BY_SLUG_QUERY = """
 query getEventId($slug: String) {
     event(slug: $slug) {

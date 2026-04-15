@@ -57,7 +57,7 @@ class StableTournamentDisplay(TournamentDisplay):
                 id=3,
                 displayName="Losers Bracket - Round 2",
                 player1=PlayerData(tag="Eve"),
-                player2=PlayerData(tag="Frank"),
+                player2=PlayerData(tag="TBD"),
                 state=1,  # Waiting
                 updatedAt=1640995200
             ),

@@ -9,7 +9,9 @@ from textual.widgets import DataTable, Static
 from ..api.jsonbin_api import AlertData
 from ..models import MatchRow
 from .presentation import (
+    MATCH_TABLE_SEPARATOR_KEY,
     build_match_row,
+    build_match_table_separator_row,
     calculate_column_widths,
     calculate_num_columns,
     group_matches_by_pool,
@@ -119,15 +121,18 @@ class PoolGridManager:
     ) -> None:
         """Update a table in place unless the row order has changed."""
         desired_rows = [
-            (
-                str(match.id),
-                build_match_row(
-                    match,
-                    late_arrivals=alerts.late_arrivals,
-                    dqs=alerts.dqs,
-                ),
-            )
-            for match in matches
+            (MATCH_TABLE_SEPARATOR_KEY, build_match_table_separator_row()),
+            *[
+                (
+                    str(match.id),
+                    build_match_row(
+                        match,
+                        late_arrivals=alerts.late_arrivals,
+                        dqs=alerts.dqs,
+                    ),
+                )
+                for match in matches
+            ],
         ]
         desired_keys = [row_key for row_key, _ in desired_rows]
         existing_keys = [row.key.value or "" for row in pool_table.ordered_rows]

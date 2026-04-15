@@ -144,6 +144,8 @@ class SimulationProgress(DictCompatibleBaseModel):
 class MatchRow:
     """Represents a single match/set"""
 
+    TBD_ROW_STYLE = "dim bright_black"
+
     STATE_MARKERS: dict[MatchState, str] = {
         MatchState.WAITING: "[dim].[/dim]",
         MatchState.READY: "[red]![/red]",
@@ -221,7 +223,7 @@ class MatchRow:
     def status_icon(self) -> str:
         icon = self.STATE_MARKERS.get(self.effective_state, "[magenta]?[/magenta]")
         if self.has_tbd_player:
-            return f"[dim]{icon}[/dim]"
+            return self._style_tbd_cell(icon)
         return icon
 
     @property
@@ -235,7 +237,7 @@ class MatchRow:
             status += f" (Stream: {self.stream})"
 
         if self.has_tbd_player:
-            return f"[dim]{status}[/dim]"
+            return self._style_tbd_cell(status)
         return status
 
     @property
@@ -252,7 +254,7 @@ class MatchRow:
             name = f"{self.player1[:12]} vs {self.player2[:12]}"
 
         if self.has_tbd_player:
-            return f"[dim]{name}[/dim]"
+            return self._style_tbd_cell(name)
         elif self.is_ready:
             return f"[bold]{name}[/bold]"
         return name
@@ -270,8 +272,12 @@ class MatchRow:
         """Calculate time since match became ready, started, or was last updated"""
         raw = self._raw_time_since_ready
         if raw != "-" and self.has_tbd_player:
-            return f"[dim]{raw}[/dim]"
+            return self._style_tbd_cell(raw)
         return raw
+
+    def _style_tbd_cell(self, value: str) -> str:
+        """Style cells for matches that still depend on a TBD player."""
+        return f"[{self.TBD_ROW_STYLE}]{value}[/]"
 
     @property
     def _raw_time_since_ready(self) -> str:

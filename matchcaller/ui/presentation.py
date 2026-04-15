@@ -7,6 +7,9 @@ from ..models import MatchRow
 
 ColumnWidths = tuple[int, int, int]
 
+MATCH_TABLE_SEPARATOR_KEY = "__match_table_separator__"
+MATCH_TABLE_SEPARATOR_WIDTH = 80
+
 
 def group_matches_by_pool(matches: Sequence[MatchRow]) -> dict[str, list[MatchRow]]:
     """Group matches by pool name."""
@@ -97,3 +100,9 @@ def build_match_row(
         f"{match.status_icon} {match.status_text}",
         match.time_since_ready,
     ]
+
+
+def build_match_table_separator_row() -> list[str]:
+    """Build a visual divider row between table headers and match rows."""
+    cell = "-" * MATCH_TABLE_SEPARATOR_WIDTH
+    return [cell, cell, cell]

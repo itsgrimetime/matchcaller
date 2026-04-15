@@ -4,8 +4,10 @@ import pytest
 
 from matchcaller.models.match import MatchData, MatchRow, PlayerData
 from matchcaller.ui.presentation import (
+    MATCH_TABLE_SEPARATOR_WIDTH,
     build_alert_tags,
     build_match_row,
+    build_match_table_separator_row,
     calculate_column_widths,
     calculate_num_columns,
     group_matches_by_pool,
@@ -127,3 +129,22 @@ class TestPresentationHelpers:
         assert row[0].endswith("[bold yellow]LATE[/bold yellow]")
         assert row[1] == "[red]![/red] Ready"
         assert row[2] != "-"
+
+    def test_build_match_row_greys_tbd_waiting_rows_more_strongly(self):
+        match = make_match(
+            1,
+            player1="Alice",
+            player2="TBD",
+            state=1,
+        )
+
+        row = build_match_row(match, late_arrivals=set(), dqs=set())
+
+        assert row[0].startswith("[dim bright_black]")
+        assert "[dim bright_black]Waiting[/]" in row[1]
+        assert row[2].startswith("[dim bright_black]")
+
+    def test_build_match_table_separator_row(self):
+        row = build_match_table_separator_row()
+
+        assert row == ["-" * MATCH_TABLE_SEPARATOR_WIDTH] * 3

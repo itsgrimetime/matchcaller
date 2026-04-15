@@ -14,7 +14,13 @@ from ..models.dashboard import (
     filter_late_bracket_matches,
 )
 from ..models.match import MatchRow
-from .presentation import build_match_row, calculate_column_widths, sort_pool_matches
+from .presentation import (
+    MATCH_TABLE_SEPARATOR_KEY,
+    build_match_row,
+    build_match_table_separator_row,
+    calculate_column_widths,
+    sort_pool_matches,
+)
 
 DashboardMatchWidths = tuple[int, int, int]
 
@@ -159,6 +165,10 @@ class DashboardGridManager:
         table.add_column("Time", key="duration", width=duration_width)
         table.cursor_type = "none"
         table.cell_padding = 0
+        table.add_row(
+            *build_match_table_separator_row(),
+            key=MATCH_TABLE_SEPARATOR_KEY,
+        )
         if rows:
             for index, row in enumerate(rows):
                 table.add_row(*row, key=str(index))

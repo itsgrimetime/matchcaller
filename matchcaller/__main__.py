@@ -148,22 +148,25 @@ def main():
             if events:
                 log(f"✅ Resolved short URL via start.gg API alias: {short_url_slug}")
             else:
-                try:
-                    tournament_slug = resolve_tournament_slug_from_unique_string(
-                        short_url_slug
-                    )
-                except Exception as resolve_error:
-                    if not _is_abbey_short_url(short_url_slug):
-                        raise
-                    log(f"⚠️  Short URL redirect resolution failed: {resolve_error}")
+                is_abbey_short_url = _is_abbey_short_url(short_url_slug)
+                if is_abbey_short_url:
                     log("🔍 Falling back to start.gg API search for Abbey weekly")
                     tournament_slug = asyncio.run(
                         tmp_api.find_nearest_abbey_tournament_slug()
                     )
-                    if not tournament_slug:
+
+                if not tournament_slug:
+                    try:
+                        tournament_slug = resolve_tournament_slug_from_unique_string(
+                            short_url_slug
+                        )
+                    except Exception as resolve_error:
+                        if not is_abbey_short_url:
+                            raise
+                        log(f"⚠️  Short URL redirect resolution failed: {resolve_error}")
                         raise RuntimeError(
                             "Could not find a nearby Melee @ Abbey Tavern tournament "
-                            "via start.gg API search"
+                            "via start.gg API search or web redirect"
                         ) from resolve_error
                 events = asyncio.run(tmp_api.get_events_for_tournament(tournament_slug))
 

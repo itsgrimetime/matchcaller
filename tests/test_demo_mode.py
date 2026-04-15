@@ -206,7 +206,7 @@ class TestDemoMode:
             "--token",
             "real_token",
             "--short-url",
-            "abbey",
+            "weekly",
             "--event-filter",
             "singles",
         ]
@@ -240,7 +240,8 @@ class TestDemoMode:
 
             main()
 
-            mock_api.get_events_for_tournament.assert_any_await("abbey")
+            mock_api_class.return_value.find_nearest_abbey_tournament_slug.assert_not_called()
+            mock_api.get_events_for_tournament.assert_any_await("weekly")
             mock_api.get_events_for_tournament.assert_any_await("melee-abbey-tavern-137")
             kwargs = mock_app_class.call_args.kwargs
             assert kwargs["event_slug"] == "tournament/melee-abbey-tavern-137/event/melee-singles"
@@ -378,6 +379,49 @@ class TestDemoMode:
             assert kwargs["event_slug"] == "tournament/melee-abbey-tavern-137/event/melee-singles"
             assert kwargs["tournament_slug"] == "melee-abbey-tavern-137"
             assert kwargs["view_mode"] == "auto"
+
+    def test_abbey_short_url_uses_api_search_before_redirect_resolution(self):
+        from unittest.mock import AsyncMock
+
+        test_args = [
+            "--token",
+            "real_token",
+            "--short-url",
+            "abbey",
+            "--event-filter",
+            "melee-singles",
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.utils.resolve.resolve_tournament_slug_from_unique_string"
+        ) as mock_resolver, patch("matchcaller.api.TournamentAPI") as mock_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_api = mock_api_class.return_value
+            mock_api.find_nearest_abbey_tournament_slug = AsyncMock(
+                return_value="melee-abbey-tavern-137"
+            )
+            mock_api.get_events_for_tournament = AsyncMock(
+                side_effect=[
+                    [],
+                    [
+                        {
+                            "id": "1",
+                            "name": "Melee Singles",
+                            "slug": "tournament/melee-abbey-tavern-137/event/melee-singles",
+                        }
+                    ],
+                ]
+            )
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            mock_resolver.assert_not_called()
+            mock_api.find_nearest_abbey_tournament_slug.assert_awaited_once()
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["event_slug"] == "tournament/melee-abbey-tavern-137/event/melee-singles"
+            assert kwargs["tournament_slug"] == "melee-abbey-tavern-137"
 
     def test_simulate_mode_falls_back_to_main_view_when_ladder_requested(self):
         test_args = ["--simulate", "simulator_data/fake.json", "--view", "ladder"]

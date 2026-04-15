@@ -9,6 +9,43 @@ from matchcaller.api.tournament_api import TournamentAPI
 from matchcaller.api.transport import HTTPResult
 
 
+def _set_node(set_id: int) -> dict:
+    return {
+        "id": set_id,
+        "fullRoundText": "Round 1",
+        "identifier": None,
+        "state": 2,
+        "updatedAt": 300,
+        "startedAt": None,
+        "round": 1,
+        "station": None,
+        "stream": None,
+        "phaseGroup": {
+            "displayIdentifier": "1",
+            "phase": {"name": "Pools"},
+        },
+        "slots": [
+            {"entrant": {"participants": [{"gamerTag": f"Player {set_id}A"}]}},
+            {"entrant": {"participants": [{"gamerTag": f"Player {set_id}B"}]}},
+        ],
+    }
+
+
+def _event_sets_payload(nodes: list[dict]) -> dict:
+    return {
+        "data": {
+            "event": {
+                "name": "Test Event",
+                "tournament": {"name": "Test Tournament"},
+                "sets": {
+                    "pageInfo": {"totalPages": 2},
+                    "nodes": nodes,
+                },
+            }
+        }
+    }
+
+
 class FakeTransport:
     """Queue-backed transport stub for API client tests."""
 
@@ -92,6 +129,40 @@ class TestTransportInjection:
         assert result.event_name == "Test Event"
         assert transport.post_calls[0]["headers"]["Authorization"] == "Bearer test_token"
         assert transport.post_calls[0]["timeout_seconds"] == 10
+
+    @pytest.mark.asyncio
+    async def test_fetch_sets_paginates_under_startgg_complexity_limit(self):
+        transport = FakeTransport(
+            post_results=[
+                HTTPResult(
+                    status=200,
+                    text="",
+                    json_data=_event_sets_payload([_set_node(index) for index in range(80)]),
+                ),
+                HTTPResult(
+                    status=200,
+                    text="",
+                    json_data=_event_sets_payload([_set_node(80)]),
+                ),
+            ]
+        )
+        api = TournamentAPI(
+            api_token="test_token",
+            event_id="12345",
+            transport=transport,
+        )
+
+        result = await api.fetch_sets()
+
+        assert len(result.sets) == 81
+        assert [call["payload"]["variables"]["page"] for call in transport.post_calls] == [
+            1,
+            2,
+        ]
+        assert all(
+            call["payload"]["variables"]["perPage"] == 80
+            for call in transport.post_calls
+        )
 
     @pytest.mark.asyncio
     async def test_fetch_sets_log_does_not_include_token_suffix(self):

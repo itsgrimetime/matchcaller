@@ -38,13 +38,42 @@ def _http_error(status: int = 500) -> HTTPResult:
     return HTTPResult(status=status, text="station service unavailable", json_data=None)
 
 
-def _event_sets_payload(event_name: str = "Singles") -> dict:
+def _set_node(set_id: int) -> dict:
+    return {
+        "id": set_id,
+        "fullRoundText": "Round 1",
+        "identifier": None,
+        "state": 2,
+        "updatedAt": 300,
+        "startedAt": None,
+        "round": 1,
+        "station": None,
+        "stream": None,
+        "phaseGroup": {
+            "displayIdentifier": "1",
+            "phase": {"name": "Pools"},
+        },
+        "slots": [
+            {"entrant": {"participants": [{"gamerTag": f"Player {set_id}A"}]}},
+            {"entrant": {"participants": [{"gamerTag": f"Player {set_id}B"}]}},
+        ],
+    }
+
+
+def _event_sets_payload(
+    event_name: str = "Singles",
+    nodes: list[dict] | None = None,
+    total_pages: int = 1,
+) -> dict:
     return {
         "data": {
             "event": {
                 "name": event_name,
                 "tournament": {"name": "Melee @ Abbey Tavern"},
-                "sets": {"nodes": []},
+                "sets": {
+                    "pageInfo": {"totalPages": total_pages},
+                    "nodes": nodes or [],
+                },
             }
         }
     }
@@ -205,6 +234,41 @@ class TestTournamentDashboardAPI:
         }
         assert transport.post_calls[1]["payload"]["query"] == EVENT_SETS_QUERY
         assert transport.post_calls[1]["payload"]["variables"]["eventId"] == "12345"
+        assert transport.post_calls[3]["payload"]["variables"]["perPage"] == 80
+
+    @pytest.mark.asyncio
+    async def test_fetch_main_state_paginates_under_startgg_complexity_limit(self):
+        transport = FakeTransport(
+            [
+                _result(_event_id_payload("12345")),
+                _result(
+                    _event_sets_payload(
+                        nodes=[_set_node(index) for index in range(80)],
+                        total_pages=2,
+                    )
+                ),
+                _result(_event_sets_payload(nodes=[_set_node(80)], total_pages=2)),
+            ]
+        )
+        api = TournamentDashboardAPI(
+            api_token="token",
+            event_slug="tournament/weekly/event/singles",
+            tournament_slug="weekly",
+            requested_view=ViewMode.AUTO,
+            transport=transport,
+        )
+
+        main = await api._fetch_main_state()
+
+        assert len(main.sets) == 81
+        assert [call["payload"]["variables"]["page"] for call in transport.post_calls[1:]] == [
+            1,
+            2,
+        ]
+        assert all(
+            call["payload"]["variables"]["perPage"] == 80
+            for call in transport.post_calls[1:]
+        )
 
     @pytest.mark.asyncio
     async def test_fetch_dashboard_keeps_auto_main_when_ladder_not_found_and_retries_next_refresh(self):

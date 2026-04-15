@@ -15,6 +15,9 @@ query EventSets($eventId: ID!, $page: Int!, $perPage: Int!) {
                 state: [1, 2, 6]
             }
         ) {
+            pageInfo {
+                totalPages
+            }
             nodes {
                 id
                 fullRoundText

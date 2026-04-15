@@ -5,8 +5,6 @@ import json
 import re
 import time
 
-import aiohttp
-
 from ..models.match import TournamentState
 from ..models.mock_data import MOCK_TOURNAMENT_DATA
 from ..models.startgg_api import StartGGAPIResponse, StartGGEventSetsResponse, StartGGSet
@@ -16,9 +14,9 @@ from .parsers import (
     parse_tournament_events_payload,
     validate_startgg_response,
 )
+from .event_sets import fetch_event_sets_payload
 from .queries import (
     EVENT_ID_BY_SLUG_QUERY,
-    EVENT_SETS_QUERY,
     TOURNAMENT_EVENTS_QUERY,
     TOURNAMENT_SEARCH_QUERY,
 )
@@ -130,31 +128,15 @@ class TournamentAPI:
                     "Missing event ID - provide either event_id or event_slug parameter"
                 )
 
-        variables = {
-            "eventId": self.event_id,
-            "page": 1,
-            "perPage": 100,  # Increased after simplifying query to reduce complexity
-        }
-
         try:
             log(f"🔍 Fetching data for event ID: {self.event_id}")
-            response = await self.transport.post_json(
-                self.base_url,
-                payload={"query": EVENT_SETS_QUERY, "variables": variables},
+            raw_data = await fetch_event_sets_payload(
+                transport=self.transport,
+                base_url=self.base_url,
                 headers=self._headers(),
+                event_id=self.event_id,
                 timeout_seconds=10,
             )
-            log(f"📡 API Response Status: {response.status}")
-
-            if response.status != 200:
-                error_text = response.text or str(response.json_data)
-                log(f"❌ HTTP Error: {error_text}")
-                raise aiohttp.ClientError(f"HTTP {response.status}: {error_text}")
-
-            if not isinstance(response.json_data, dict):
-                raise Exception("Expected JSON object from start.gg API")
-
-            raw_data = response.json_data
             log(f"🔍 Raw API response keys: {list(raw_data.keys())}")
 
             # Parse and validate the response with Pydantic

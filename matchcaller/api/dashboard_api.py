@@ -23,10 +23,10 @@ from matchcaller.models.dashboard import (
 from matchcaller.models.match import MatchData, MatchRow, PlayerData, TournamentState
 from matchcaller.utils.logging import log
 
+from .event_sets import EVENT_SETS_PAGE_SIZE, fetch_event_sets_payload
 from .parsers import parse_event_sets_response, validate_startgg_response
 from .queries import (
     EVENT_ID_BY_SLUG_QUERY,
-    EVENT_SETS_QUERY,
     LADDER_EVENT_DETAIL_QUERY,
     TOURNAMENT_DASHBOARD_EVENTS_QUERY,
     TOURNAMENT_STATIONS_QUERY,
@@ -157,9 +157,12 @@ class TournamentDashboardAPI:
         if not event_id:
             raise ValueError("Missing event_id or unresolved event_slug for dashboard API")
 
-        raw_data = await self._post_graphql(
-            EVENT_SETS_QUERY,
-            {"eventId": event_id, "page": 1, "perPage": 100},
+        raw_data = await fetch_event_sets_payload(
+            transport=self.transport,
+            base_url=self.base_url,
+            headers=self._headers(),
+            event_id=event_id,
+            timeout_seconds=10,
         )
         return parse_event_sets_response(validate_startgg_response(raw_data))
 
@@ -199,7 +202,7 @@ class TournamentDashboardAPI:
 
         raw_data = await self._post_graphql(
             LADDER_EVENT_DETAIL_QUERY,
-            {"slug": event_slug, "page": 1, "perPage": 100},
+            {"slug": event_slug, "page": 1, "perPage": EVENT_SETS_PAGE_SIZE},
         )
         event = (raw_data.get("data") or {}).get("event")
         if not isinstance(event, dict):

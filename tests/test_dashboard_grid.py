@@ -76,4 +76,5 @@ class TestDashboardGridHelpers:
         )
 
         assert widths != (26, 16, 10)
-        assert sum(widths) <= 30
+        assert widths == (15, 13, 8)
+        assert sum(widths) == 36

@@ -120,8 +120,13 @@ class PoolGridManager:
         duration_column_key: str,
     ) -> None:
         """Update a table in place unless the row order has changed."""
+        column_widths = (
+            pool_table.columns[match_column_key].width,
+            pool_table.columns[status_column_key].width,
+            pool_table.columns[duration_column_key].width,
+        )
         desired_rows = [
-            (MATCH_TABLE_SEPARATOR_KEY, build_match_table_separator_row()),
+            (MATCH_TABLE_SEPARATOR_KEY, build_match_table_separator_row(column_widths)),
             *[
                 (
                     str(match.id),

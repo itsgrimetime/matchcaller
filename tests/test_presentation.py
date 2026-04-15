@@ -4,7 +4,6 @@ import pytest
 
 from matchcaller.models.match import MatchData, MatchRow, PlayerData
 from matchcaller.ui.presentation import (
-    MATCH_TABLE_SEPARATOR_WIDTH,
     build_alert_tags,
     build_match_row,
     build_match_table_separator_row,
@@ -94,10 +93,16 @@ class TestPresentationHelpers:
         assert calculate_num_columns(7) == 4
 
     def test_calculate_column_widths(self):
-        assert calculate_column_widths(120, 2) == (26, 14, 10)
-        assert calculate_column_widths(96, 2) == (22, 14, 8)
-        assert calculate_column_widths(84, 2) == (18, 12, 7)
-        assert calculate_column_widths(60, 2) == (14, 10, 6)
+        assert calculate_column_widths(120, 2) == (28, 14, 14)
+        assert calculate_column_widths(96, 2) == (21, 13, 10)
+        assert calculate_column_widths(84, 2) == (17, 13, 8)
+        assert calculate_column_widths(60, 2) == (13, 11, 6)
+
+    def test_calculate_column_widths_expands_to_fill_available_table_width(self):
+        widths = calculate_column_widths(120, 1)
+
+        assert widths == (86, 16, 14)
+        assert sum(widths) == 116
 
     def test_build_alert_tags(self):
         match = make_match(
@@ -144,7 +149,11 @@ class TestPresentationHelpers:
         assert "[dim bright_black]Waiting[/]" in row[1]
         assert row[2].startswith("[dim bright_black]")
 
-    def test_build_match_table_separator_row(self):
-        row = build_match_table_separator_row()
+    def test_build_match_table_separator_row_matches_column_widths_and_border_style(self):
+        row = build_match_table_separator_row((5, 3, 2))
 
-        assert row == ["-" * MATCH_TABLE_SEPARATOR_WIDTH] * 3
+        assert row == [
+            "[bright_black]-----[/]",
+            "[bright_black]---[/]",
+            "[bright_black]--[/]",
+        ]

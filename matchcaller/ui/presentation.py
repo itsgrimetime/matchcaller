@@ -8,7 +8,7 @@ from ..models import MatchRow
 ColumnWidths = tuple[int, int, int]
 
 MATCH_TABLE_SEPARATOR_KEY = "__match_table_separator__"
-MATCH_TABLE_SEPARATOR_WIDTH = 80
+MATCH_TABLE_SEPARATOR_STYLE = "bright_black"
 
 
 def group_matches_by_pool(matches: Sequence[MatchRow]) -> dict[str, list[MatchRow]]:
@@ -52,15 +52,26 @@ def calculate_column_widths(
     num_columns: int,
 ) -> ColumnWidths:
     """Fit table columns to the available terminal width."""
-    column_width = max(24, container_width // max(1, num_columns) - 4)
+    column_width = max(30, container_width // max(1, num_columns) - 4)
 
-    if column_width >= 50:
-        return (26, 14, 10)
-    if column_width >= 44:
-        return (22, 14, 8)
-    if column_width >= 38:
-        return (18, 12, 7)
-    return (14, 10, 6)
+    if column_width >= 70:
+        status_width = 16
+        duration_width = 14
+    elif column_width >= 52:
+        status_width = 14
+        duration_width = 14
+    elif column_width >= 44:
+        status_width = 13
+        duration_width = 10
+    elif column_width >= 36:
+        status_width = 13
+        duration_width = 8
+    else:
+        status_width = 11
+        duration_width = 6
+
+    match_width = max(12, column_width - status_width - duration_width)
+    return (match_width, status_width, duration_width)
 
 
 def build_alert_tags(
@@ -102,7 +113,9 @@ def build_match_row(
     ]
 
 
-def build_match_table_separator_row() -> list[str]:
+def build_match_table_separator_row(column_widths: ColumnWidths) -> list[str]:
     """Build a visual divider row between table headers and match rows."""
-    cell = "-" * MATCH_TABLE_SEPARATOR_WIDTH
-    return [cell, cell, cell]
+    return [
+        f"[{MATCH_TABLE_SEPARATOR_STYLE}]{'-' * width}[/]"
+        for width in column_widths
+    ]

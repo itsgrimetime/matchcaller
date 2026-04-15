@@ -166,7 +166,7 @@ class DashboardGridManager:
         table.cursor_type = "none"
         table.cell_padding = 0
         table.add_row(
-            *build_match_table_separator_row(),
+            *build_match_table_separator_row(column_widths),
             key=MATCH_TABLE_SEPARATOR_KEY,
         )
         if rows:

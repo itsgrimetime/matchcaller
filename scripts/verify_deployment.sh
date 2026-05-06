@@ -20,6 +20,7 @@ REQUIRED_SCRIPTS=(
     "resolve_slug"
     "start_matchcaller.sh"
     "scripts/setup_bashrc.sh"
+    "scripts/log_display_state.sh"
 )
 
 for script in "${REQUIRED_SCRIPTS[@]}"; do
@@ -155,6 +156,33 @@ if [ -f "$HOME/.bashrc" ]; then
 else
     echo "  ⚠️  No .bashrc file found"
     ((WARNINGS++))
+fi
+
+# Check 7: Boot-time display-state logging service
+echo ""
+echo "✓ Checking display-state logging..."
+if command -v systemctl >/dev/null 2>&1; then
+    if systemctl list-unit-files matchcaller-display-log.service 2>/dev/null | grep -q matchcaller-display-log; then
+        if systemctl is-enabled matchcaller-display-log.service >/dev/null 2>&1; then
+            echo "  ✅ matchcaller-display-log.service installed and enabled"
+        else
+            echo "  ⚠️  matchcaller-display-log.service installed but not enabled"
+            echo "     sudo systemctl enable matchcaller-display-log.service"
+            ((WARNINGS++))
+        fi
+    else
+        echo "  ⚠️  matchcaller-display-log.service not installed"
+        echo "     Run: ./scripts/setup_bashrc.sh   (re-runs the systemd install)"
+        ((WARNINGS++))
+    fi
+else
+    echo "  (skipped: systemctl not available)"
+fi
+
+if [ -f "$HOME/matchcaller/logs/display_state.log" ]; then
+    echo "  ✅ display_state.log present ($(stat -c%s "$HOME/matchcaller/logs/display_state.log") bytes)"
+else
+    echo "  ⚠️  display_state.log not yet generated (will appear after next boot)"
 fi
 
 # Summary

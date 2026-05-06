@@ -1,0 +1,24 @@
+[Unit]
+Description=Log display/framebuffer state for matchcaller diagnostics (early boot)
+Documentation=https://github.com/discord/matchcaller
+# Run after console-setup loads the final font, so the snapshot reflects the
+# same terminal size getty/matchcaller will see. console-setup is the unit
+# that picks up /etc/default/console-setup.
+After=console-setup.service systemd-vconsole-setup.service multi-user.target
+Wants=console-setup.service
+# Don't fail boot if the script is missing.
+ConditionPathExists=__LOG_SCRIPT_PATH__
+
+[Service]
+Type=oneshot
+ExecStart=__LOG_SCRIPT_PATH__ boot-systemd
+RemainAfterExit=no
+# Best-effort logging — never delay boot more than a few seconds.
+TimeoutStartSec=10s
+# Run as root so we can read debugfs (/sys/kernel/debug/dri) and use vcgencmd.
+User=root
+# Don't restart on failure — one snapshot per boot is fine.
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

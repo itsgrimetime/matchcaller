@@ -36,6 +36,7 @@ from .refresh_controller import (
     build_error_timestamp,
 )
 from ..utils.logging import log, set_console_logging
+from ..utils.network import get_local_ip_last_octet
 
 from textual.theme import Theme
 
@@ -230,6 +231,10 @@ class TournamentDisplay(App[None]):
             f"alert_source: {type(self.alert_source).__name__ if self.alert_source else 'None'}"
         )
 
+    def _detect_local_ip_octet(self) -> str | None:
+        """Hook for the on-screen IP indicator. Tests override to suppress."""
+        return get_local_ip_last_octet()
+
     def compose(self) -> ComposeResult:
         """Create the UI layout"""
         yield Header()
@@ -246,6 +251,13 @@ class TournamentDisplay(App[None]):
         set_console_logging(False)
 
         log("🏁 on_mount() called")
+
+        ip_octet = self._detect_local_ip_octet()
+        if ip_octet:
+            self.sub_title = f"IP .{ip_octet}"
+            log(f"📡 Detected local IP last octet: .{ip_octet}")
+        else:
+            log("📡 Could not detect local IP")
 
         # Show loading state
         log("📡 Showing loading state...")

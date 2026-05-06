@@ -13,7 +13,10 @@ class StableTournamentDisplay(TournamentDisplay):
     
     def __init__(self):
         super().__init__(api_token=None, event_id=None, event_slug=None)
-        
+
+    def _detect_local_ip_octet(self) -> str | None:
+        return None
+
     def on_mount(self) -> None:
         """Override to prevent time-based updates for stable snapshots"""
         # Load stable mock data immediately without setting up periodic updates

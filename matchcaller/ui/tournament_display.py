@@ -519,6 +519,9 @@ class TournamentDisplay(App[None]):
             dom_has_pool=lambda pool_name: bool(
                 pools_container.query(f"#{self.pool_grid.pool_id(pool_name)}")
             ),
+            dom_has_section=lambda section_id: bool(
+                pools_container.query(f"#{section_id}")
+            ),
         )
 
         log(f"🔄 Found {len(plan.pools)} pools: {list(plan.pools.keys())}")

@@ -141,7 +141,13 @@ def _extract_player(set_data: StartGGSet, slot_index: int) -> PlayerData:
     if not slot.entrant or not slot.entrant.participants:
         return PlayerData(tag="TBD")
 
-    participant = slot.entrant.participants[0]
+    participants = slot.entrant.participants
+    participant = participants[0]
+    tag = " / ".join(
+        participant.gamerTag
+        for participant in participants
+        if participant.gamerTag
+    ) or "TBD"
     discord_id: str | None = None
     discord_username: str | None = None
     if participant.user and participant.user.authorizations:
@@ -150,7 +156,7 @@ def _extract_player(set_data: StartGGSet, slot_index: int) -> PlayerData:
         discord_username = authorization.externalUsername
 
     return PlayerData(
-        tag=participant.gamerTag,
+        tag=tag,
         id=None,
         discord_id=discord_id,
         discord_username=discord_username,

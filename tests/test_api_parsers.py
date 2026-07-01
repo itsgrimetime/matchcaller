@@ -126,6 +126,22 @@ class TestAPIParsers:
 
         assert result.sets[0].state == 99
 
+    def test_parse_event_sets_response_joins_doubles_team_participants(
+        self,
+        event_sets_raw: dict,
+    ):
+        event_sets_raw["data"]["event"]["sets"]["nodes"][0]["slots"][0]["entrant"][
+            "participants"
+        ].append({"gamerTag": "Player1Partner"})
+        event_sets_raw["data"]["event"]["sets"]["nodes"][0]["slots"][1]["entrant"][
+            "participants"
+        ].append({"gamerTag": "Player2Partner"})
+
+        result = parse_event_sets_response(validate_startgg_response(event_sets_raw))
+
+        assert result.sets[0].player1.tag == "Player1 / Player1Partner"
+        assert result.sets[0].player2.tag == "Player2 / Player2Partner"
+
     def test_parse_event_sets_response_handles_missing_phase_group(self, event_sets_raw: dict):
         event_sets_raw["data"]["event"]["sets"]["nodes"][0]["phaseGroup"] = None
 

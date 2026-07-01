@@ -88,6 +88,9 @@ python -m matchcaller --demo
 # Live tournament
 python -m matchcaller --token TOKEN --slug "tournament/name/event/singles"
 
+# Pick an event from a tournament page, such as doubles
+python -m matchcaller --token TOKEN --tournament "tournament/name" --event-filter doubles
+
 # Auto-resolve from short URL (requires start_matchcaller.sh)
 ./start_matchcaller.sh
 ```
@@ -98,7 +101,7 @@ Edit `start_matchcaller.sh`:
 
 ```bash
 SHORT_URL="abbey"           # Your start.gg short URL
-EVENT_TYPE="singles"         # Event type: singles, doubles, etc.
+EVENT_FILTER="auto"          # auto tracks active doubles/singles; use singles/doubles to force
 NETWORK_TIMEOUT=120          # Max seconds to wait for network
 ```
 

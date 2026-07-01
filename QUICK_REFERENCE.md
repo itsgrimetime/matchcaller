@@ -103,7 +103,7 @@ Edit `start_matchcaller.sh`:
 
 ```bash
 SHORT_URL="abbey"           # Your short URL
-EVENT_TYPE="singles"         # Event type
+EVENT_FILTER="auto"          # auto tracks active doubles/singles; use singles/doubles to force
 NETWORK_TIMEOUT=120          # Network wait (seconds)
 ```
 
@@ -177,7 +177,7 @@ ps aux | grep matchcaller
 tail -f /tmp/tournament_debug.log
 
 # Test API connection
-python -m matchcaller --token "$STARTGG_API_TOKEN" --slug "tournament/test/event/singles"
+python -m matchcaller --token "$STARTGG_API_TOKEN" --tournament "tournament/test" --event-filter singles
 
 # Check git status
 cd /home/pi/matchcaller && git status

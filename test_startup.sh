@@ -11,7 +11,7 @@ echo "================================================"
 # Simulate Pi environment
 export MATCHCALLER_DIR="$(pwd)"
 export SHORT_URL="abbey"
-export EVENT_TYPE="singles"
+export EVENT_FILTER="${EVENT_FILTER:-auto}"
 export NETWORK_TIMEOUT=10  # Shorter timeout for testing
 
 # Check if API token is set
@@ -41,8 +41,9 @@ echo "Test 2: Slug Resolution"
 echo "------------------------"
 if SLUG_PART=$(./resolve_slug "$SHORT_URL" 2>&1); then
     echo "✅ Slug resolved: $SLUG_PART"
-    TOURNAMENT_SLUG="tournament/${SLUG_PART}/event/${EVENT_TYPE}"
-    echo "   Full slug: $TOURNAMENT_SLUG"
+    TOURNAMENT_SLUG="$SLUG_PART"
+    echo "   Tournament slug: $TOURNAMENT_SLUG"
+    echo "   Event filter: $EVENT_FILTER"
 else
     echo "❌ Slug resolution failed"
     echo "   Output: $SLUG_PART"
@@ -108,8 +109,8 @@ if [ "$USE_DEMO" = false ]; then
     echo ""
     echo "Test 6: Real API Connection"
     echo "------------------------"
-    echo "Testing with real tournament slug for 8 seconds..."
-    if timeout 8 python -m matchcaller --token "$STARTGG_API_TOKEN" --slug "$TOURNAMENT_SLUG" 2>&1 | head -20; then
+    echo "Testing with real tournament and event filter for 8 seconds..."
+    if timeout 8 python -m matchcaller --token "$STARTGG_API_TOKEN" --tournament "$TOURNAMENT_SLUG" --event-filter "$EVENT_FILTER" 2>&1 | head -20; then
         echo "✅ Real API mode started successfully"
     else
         EXIT_CODE=$?

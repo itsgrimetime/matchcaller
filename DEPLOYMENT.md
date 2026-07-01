@@ -187,7 +187,7 @@ Edit `/home/pi/matchcaller/start_matchcaller.sh`:
 ```bash
 # Configuration section at top of file
 SHORT_URL="abbey"           # Your start.gg short URL
-EVENT_TYPE="singles"         # Event type: singles, doubles, etc.
+EVENT_FILTER="auto"          # auto tracks active doubles/singles; use singles/doubles to force
 NETWORK_TIMEOUT=120          # Seconds to wait for WiFi (2 minutes)
 MATCHCALLER_DIR="/home/pi/matchcaller"  # Install directory
 ```
@@ -358,7 +358,7 @@ This means:
 
 - Test token with API:
   ```bash
-  python -m matchcaller --token "$STARTGG_API_TOKEN" --slug "tournament/test/event/singles"
+  python -m matchcaller --token "$STARTGG_API_TOKEN" --tournament "tournament/test" --event-filter singles
   ```
 
 ---

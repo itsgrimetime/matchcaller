@@ -372,6 +372,98 @@ class TestTournamentDisplay:
                 assert mock_fetch.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_large_single_pool_uses_two_visual_lanes(self):
+        """A large one-pool bracket should use both wide terminal columns."""
+        test_data = TournamentState(
+            event_name="Single Pool Event",
+            tournament_name="Test Tournament",
+            sets=[
+                MatchData(
+                    id=match_id,
+                    displayName=f"Pool Match {match_id}",
+                    player1=PlayerData(tag=f"P{match_id}A"),
+                    player2=PlayerData(tag=f"P{match_id}B"),
+                    state=1,
+                    updatedAt=1640995200 + match_id,
+                    poolName="Pool A",
+                )
+                for match_id in range(1, 8)
+            ],
+        )
+        app = TournamentDisplay(
+            api_token="test_token",
+            event_id="12345",
+            poll_interval=999,
+        )
+
+        with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = test_data
+
+            async with app.run_test(size=(120, 30)) as pilot:
+                await pilot.pause(1.0)
+
+                assert app.pool_grid.current_pool_names == {"Pool A"}
+                section_ids = [
+                    section.section_id for section in app.pool_grid.current_sections
+                ]
+                assert section_ids == [
+                    "pool-pool-a",
+                    "pool-pool-a--2",
+                ]
+                column_indexes = [
+                    section.column_index for section in app.pool_grid.current_sections
+                ]
+                assert column_indexes == [0, 1]
+                assert app.query_one("#pool-pool-a")
+                assert app.query_one("#pool-pool-a--2")
+
+    @pytest.mark.asyncio
+    async def test_two_pool_layout_uses_one_section_per_pool(self):
+        """Two pools should stay as two pool sections instead of split lanes."""
+        test_data = TournamentState(
+            event_name="Two Pool Event",
+            tournament_name="Test Tournament",
+            sets=[
+                MatchData(
+                    id=match_id,
+                    displayName=f"Pool Match {match_id}",
+                    player1=PlayerData(tag=f"P{match_id}A"),
+                    player2=PlayerData(tag=f"P{match_id}B"),
+                    state=1,
+                    updatedAt=1640995200 + match_id,
+                    poolName="Pool A" if match_id <= 3 else "Pool B",
+                )
+                for match_id in range(1, 7)
+            ],
+        )
+        app = TournamentDisplay(
+            api_token="test_token",
+            event_id="12345",
+            poll_interval=999,
+        )
+
+        with patch.object(app.api, "fetch_sets", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = test_data
+
+            async with app.run_test() as pilot:
+                await pilot.pause(1.0)
+
+                assert app.pool_grid.current_pool_names == {"Pool A", "Pool B"}
+                section_ids = [
+                    section.section_id for section in app.pool_grid.current_sections
+                ]
+                assert section_ids == [
+                    "pool-pool-a",
+                    "pool-pool-b",
+                ]
+                column_indexes = [
+                    section.column_index for section in app.pool_grid.current_sections
+                ]
+                assert column_indexes == [0, 1]
+                assert app.query_one("#pool-pool-a")
+                assert app.query_one("#pool-pool-b")
+
+    @pytest.mark.asyncio
     async def test_info_line_displays_correct_stats(self):
         """Test that app shows correct tournament statistics"""
         app = TournamentDisplay()

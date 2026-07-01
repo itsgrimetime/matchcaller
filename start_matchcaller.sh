@@ -8,7 +8,7 @@ set -e  # Exit on error
 # Configuration
 MATCHCALLER_DIR="/home/abbey/matchcaller"
 SHORT_URL="abbey"
-EVENT_FILTER="${EVENT_FILTER:-melee}"
+EVENT_FILTER="${EVENT_FILTER:-auto}"  # auto tracks active doubles/singles; override with singles/doubles
 NETWORK_TIMEOUT=120  # 2 minutes
 API_TOKEN="${STARTGG_API_TOKEN:-}"  # Read from environment or set below
 

@@ -30,11 +30,12 @@ export TOURNAMENT_SLUG="tournament/melee-abbey-tavern-114"
 ```bash
 # Add to ~/.bashrc
 cd /path/to/matchcaller
-export TOURNAMENT_SLUG="tournament/$(./resolve_slug abbey)/event/singles"
+export TOURNAMENT_SLUG="$(./resolve_slug abbey)"
+export EVENT_FILTER="auto"
 export API_TOKEN="your-api-token-here"
 
 # Start the matchcaller TUI
-python -m matchcaller --token "$API_TOKEN" --slug "$TOURNAMENT_SLUG"
+python -m matchcaller --token "$API_TOKEN" --tournament "$TOURNAMENT_SLUG" --event-filter "$EVENT_FILTER"
 ```
 
 ### Complete ~/.bashrc Example
@@ -55,14 +56,15 @@ fi
 # Resolve the current tournament from short URL
 SLUG_PART=$(./resolve_slug abbey)
 
-# Build full tournament slug with event
-export TOURNAMENT_SLUG="tournament/${SLUG_PART}/event/singles"
+# Pick events under the tournament page. "auto" tracks active doubles/singles.
+export TOURNAMENT_SLUG="${SLUG_PART}"
+export EVENT_FILTER="auto"
 
 # Your API token (store securely!)
 export API_TOKEN="your-actual-token-here"
 
 # Launch the tournament display
-python -m matchcaller --token "$API_TOKEN" --slug "$TOURNAMENT_SLUG"
+python -m matchcaller --token "$API_TOKEN" --tournament "$TOURNAMENT_SLUG" --event-filter "$EVENT_FILTER"
 ```
 
 ### Raspberry Pi Auto-Start Example (with Network Wait)
@@ -81,17 +83,19 @@ echo "Waiting for network connectivity..."
 if [ $? -eq 0 ]; then
     # Network is up, resolve tournament
     if SLUG_PART=$(./resolve_slug abbey 2>/dev/null); then
-        export TOURNAMENT_SLUG="tournament/${SLUG_PART}/event/singles"
+        export TOURNAMENT_SLUG="${SLUG_PART}"
+        export EVENT_FILTER="auto"
         export API_TOKEN="your-token-here"
 
         # Start the display
-        python -m matchcaller --token "$API_TOKEN" --slug "$TOURNAMENT_SLUG"
+        python -m matchcaller --token "$API_TOKEN" --tournament "$TOURNAMENT_SLUG" --event-filter "$EVENT_FILTER"
     else
         # Fallback to last known tournament
         echo "Failed to resolve slug, using fallback"
-        export TOURNAMENT_SLUG="tournament/melee-abbey-tavern-114/event/singles"
+        export TOURNAMENT_SLUG="melee-abbey-tavern-114"
+        export EVENT_FILTER="auto"
         export API_TOKEN="your-token-here"
-        python -m matchcaller --token "$API_TOKEN" --slug "$TOURNAMENT_SLUG"
+        python -m matchcaller --token "$API_TOKEN" --tournament "$TOURNAMENT_SLUG" --event-filter "$EVENT_FILTER"
     fi
 else
     echo "Network unavailable, cannot start matchcaller"
@@ -180,9 +184,11 @@ The script exits with status code 1 if resolution fails:
 
 ```bash
 if SLUG_PART=$(./resolve_slug abbey 2>/dev/null); then
-    export TOURNAMENT_SLUG="tournament/${SLUG_PART}/event/singles"
+    export TOURNAMENT_SLUG="${SLUG_PART}"
+    export EVENT_FILTER="auto"
 else
     echo "Failed to resolve tournament, using fallback"
-    export TOURNAMENT_SLUG="tournament/melee-abbey-tavern-114/event/singles"
+    export TOURNAMENT_SLUG="melee-abbey-tavern-114"
+    export EVENT_FILTER="auto"
 fi
 ```

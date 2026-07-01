@@ -9,9 +9,11 @@ from matchcaller.ui.presentation import (
     build_match_table_separator_row,
     calculate_column_widths,
     calculate_num_columns,
+    calculate_single_pool_lanes,
     group_matches_by_pool,
     sort_pool_matches,
     sort_pool_names,
+    split_matches_into_lanes,
 )
 
 
@@ -88,9 +90,49 @@ class TestPresentationHelpers:
     def test_calculate_num_columns(self):
         assert calculate_num_columns(0) == 1
         assert calculate_num_columns(1) == 1
+        assert calculate_num_columns(1, total_matches=6, container_width=120) == 2
+        assert calculate_num_columns(1, total_matches=6, container_width=80) == 1
+        assert calculate_num_columns(1, total_matches=4, container_width=120) == 1
+        assert calculate_num_columns(2, total_matches=8, container_width=120) == 2
         assert calculate_num_columns(4) == 2
         assert calculate_num_columns(6) == 3
         assert calculate_num_columns(7) == 4
+
+    def test_calculate_single_pool_lanes_only_splits_large_wide_single_pools(self):
+        assert (
+            calculate_single_pool_lanes(
+                num_pools=1,
+                total_matches=8,
+                container_width=120,
+            )
+            == 2
+        )
+        assert (
+            calculate_single_pool_lanes(
+                num_pools=1,
+                total_matches=8,
+                container_width=50,
+            )
+            == 1
+        )
+        assert (
+            calculate_single_pool_lanes(
+                num_pools=2,
+                total_matches=8,
+                container_width=120,
+            )
+            == 1
+        )
+
+    def test_split_matches_into_lanes_keeps_reading_order_down_columns(self):
+        matches = [make_match(match_id) for match_id in range(1, 8)]
+
+        lanes = split_matches_into_lanes(matches, 2)
+
+        assert [[match.id for match in lane] for lane in lanes] == [
+            [1, 2, 3, 4],
+            [5, 6, 7],
+        ]
 
     def test_calculate_column_widths(self):
         assert calculate_column_widths(120, 2) == (28, 14, 14)

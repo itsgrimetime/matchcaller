@@ -7,6 +7,12 @@ import pytest
 from matchcaller.matchcaller import MOCK_TOURNAMENT_DATA, TournamentDisplay, main
 
 
+@pytest.fixture(autouse=True)
+def _clear_event_filter_env(monkeypatch):
+    """Keep CLI tests independent from the developer shell environment."""
+    monkeypatch.delenv("EVENT_FILTER", raising=False)
+
+
 @pytest.mark.integration
 class TestDemoMode:
     """Test demo mode functionality"""
@@ -136,6 +142,274 @@ class TestDemoMode:
                 tournament_slug="test",
                 view_mode="auto",
             )
+
+    def test_real_mode_with_tournament_and_doubles_filter(self):
+        from unittest.mock import AsyncMock
+
+        test_args = [
+            "--token",
+            "real_token",
+            "--tournament",
+            "tournament/test-weekly",
+            "--event-filter",
+            "doubles",
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.api.TournamentAPI"
+        ) as mock_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_api = mock_api_class.return_value
+            mock_api.get_events_for_tournament = AsyncMock(
+                return_value=[
+                    {
+                        "id": "1",
+                        "name": "Melee Singles",
+                        "slug": "tournament/test-weekly/event/melee-singles",
+                    },
+                    {
+                        "id": "2",
+                        "name": "Melee Doubles",
+                        "slug": "tournament/test-weekly/event/melee-doubles",
+                    },
+                ]
+            )
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            mock_api.get_events_for_tournament.assert_awaited_once_with(
+                "tournament/test-weekly"
+            )
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["event_slug"] == "tournament/test-weekly/event/melee-doubles"
+            assert kwargs["tournament_slug"] == "test-weekly"
+            assert kwargs["view_mode"] == "auto"
+
+    def test_real_mode_auto_filter_uses_multi_event_source_for_tournament(self):
+        test_args = [
+            "--token",
+            "real_token",
+            "--tournament",
+            "tournament/test-weekly",
+            "--event-filter",
+            "auto",
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.api.MultiEventTournamentAPI"
+        ) as mock_multi_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            mock_multi_api_class.assert_called_once_with(
+                api_token="real_token",
+                tournament_slug="test-weekly",
+            )
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["event_slug"] is None
+            assert kwargs["tournament_slug"] == "test-weekly"
+            assert kwargs["api"] is mock_multi_api_class.return_value
+
+    def test_short_url_auto_filter_uses_multi_event_source(self):
+        from unittest.mock import AsyncMock
+
+        test_args = [
+            "--token",
+            "real_token",
+            "--short-url",
+            "mtf",
+            "--event-filter",
+            "auto",
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.api.TournamentAPI"
+        ) as mock_api_class, patch(
+            "matchcaller.api.MultiEventTournamentAPI"
+        ) as mock_multi_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_api = mock_api_class.return_value
+            mock_api.get_events_for_tournament = AsyncMock(
+                return_value=[
+                    {
+                        "id": "1",
+                        "name": "Melee Singles",
+                        "slug": "tournament/more-than-friendlies-285/event/melee-singles",
+                    },
+                ]
+            )
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            mock_api.get_events_for_tournament.assert_awaited_once_with("mtf")
+            mock_multi_api_class.assert_called_once_with(
+                api_token="real_token",
+                tournament_slug="more-than-friendlies-285",
+            )
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["event_slug"] is None
+            assert kwargs["tournament_slug"] == "more-than-friendlies-285"
+            assert kwargs["api"] is mock_multi_api_class.return_value
+
+    def test_short_url_env_auto_filter_uses_multi_event_source(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setenv("EVENT_FILTER", "auto")
+        test_args = [
+            "--token",
+            "real_token",
+            "--short-url",
+            "mtf",
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.api.TournamentAPI"
+        ) as mock_api_class, patch(
+            "matchcaller.api.MultiEventTournamentAPI"
+        ) as mock_multi_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_api = mock_api_class.return_value
+            mock_api.get_events_for_tournament = AsyncMock(
+                return_value=[
+                    {
+                        "id": "1",
+                        "name": "Melee Singles",
+                        "slug": "tournament/more-than-friendlies-285/event/melee-singles",
+                    },
+                ]
+            )
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            mock_api.get_events_for_tournament.assert_awaited_once_with("mtf")
+            mock_multi_api_class.assert_called_once_with(
+                api_token="real_token",
+                tournament_slug="more-than-friendlies-285",
+            )
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["event_slug"] is None
+            assert kwargs["tournament_slug"] == "more-than-friendlies-285"
+            assert kwargs["api"] is mock_multi_api_class.return_value
+
+    def test_event_filter_cli_overrides_auto_environment(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setenv("EVENT_FILTER", "auto")
+        test_args = [
+            "--token",
+            "real_token",
+            "--short-url",
+            "mtf",
+            "--event-filter",
+            "singles",
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.api.TournamentAPI"
+        ) as mock_api_class, patch(
+            "matchcaller.api.MultiEventTournamentAPI"
+        ) as mock_multi_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_api = mock_api_class.return_value
+            mock_api.get_events_for_tournament = AsyncMock(
+                return_value=[
+                    {
+                        "id": "1",
+                        "name": "Melee Singles",
+                        "slug": "tournament/more-than-friendlies-285/event/melee-singles",
+                    },
+                    {
+                        "id": "2",
+                        "name": "Melee Doubles",
+                        "slug": "tournament/more-than-friendlies-285/event/melee-doubles",
+                    },
+                ]
+            )
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            mock_multi_api_class.assert_not_called()
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["event_slug"] == (
+                "tournament/more-than-friendlies-285/event/melee-singles"
+            )
+            assert kwargs["tournament_slug"] == "more-than-friendlies-285"
+
+    def test_real_mode_accepts_tournament_page_as_slug_with_event_filter(self):
+        from unittest.mock import AsyncMock
+
+        test_args = [
+            "--token",
+            "real_token",
+            "--slug",
+            "https://www.start.gg/tournament/test-weekly/details",
+            "--event-filter",
+            "doubles",
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.api.TournamentAPI"
+        ) as mock_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_api = mock_api_class.return_value
+            mock_api.get_events_for_tournament = AsyncMock(
+                return_value=[
+                    {
+                        "id": "1",
+                        "name": "Melee Singles",
+                        "slug": "tournament/test-weekly/event/melee-singles",
+                    },
+                    {
+                        "id": "2",
+                        "name": "Melee Doubles",
+                        "slug": "tournament/test-weekly/event/melee-doubles",
+                    },
+                ]
+            )
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            mock_api.get_events_for_tournament.assert_awaited_once_with(
+                "tournament/test-weekly"
+            )
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["event_slug"] == "tournament/test-weekly/event/melee-doubles"
+            assert kwargs["tournament_slug"] == "test-weekly"
+
+    def test_real_mode_normalizes_direct_event_url_slug(self):
+        test_args = [
+            "--token",
+            "real_token",
+            "--slug",
+            "https://www.start.gg/tournament/test-weekly/event/melee-doubles",
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.api.TournamentAPI"
+        ) as mock_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_app_class.return_value.run.return_value = None
+
+            main()
+
+            mock_api_class.assert_not_called()
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["event_slug"] == "tournament/test-weekly/event/melee-doubles"
+            assert kwargs["tournament_slug"] == "test-weekly"
 
     def test_event_id_real_mode_defaults_auto_without_tournament_slug(self):
         test_args = ["--token", "real_token", "--event", "12345"]

@@ -46,6 +46,124 @@ class TestPoolGridManager:
         assert not plan.dom_in_sync
         assert plan.sorted_pools == ["Pool A"]
 
+    def test_plan_splits_large_single_pool_across_two_lanes(self):
+        manager = PoolGridManager()
+        matches = [make_match(match_id) for match_id in range(1, 8)]
+
+        plan = manager.plan(
+            matches,
+            container_width=120,
+            dom_has_pool=lambda _pool_name: False,
+            dom_has_section=lambda _section_id: False,
+        )
+
+        assert plan.num_columns == 2
+        assert [section.title for section in plan.sections] == [
+            "Pool A",
+            "Pool A (cont.)",
+        ]
+        assert [section.section_id for section in plan.sections] == [
+            "pool-pool-a",
+            "pool-pool-a--2",
+        ]
+        assert [section.column_index for section in plan.sections] == [0, 1]
+        section_match_ids = [
+            [match.id for match in section.matches] for section in plan.sections
+        ]
+        assert section_match_ids == [
+            [1, 2, 3, 4],
+            [5, 6, 7],
+        ]
+
+    def test_plan_keeps_small_single_pool_in_one_lane(self):
+        manager = PoolGridManager()
+
+        plan = manager.plan(
+            [make_match(match_id) for match_id in range(1, 5)],
+            container_width=120,
+            dom_has_pool=lambda _pool_name: False,
+            dom_has_section=lambda _section_id: False,
+        )
+
+        assert plan.num_columns == 1
+        assert [section.title for section in plan.sections] == ["Pool A"]
+        assert [section.section_id for section in plan.sections] == ["pool-pool-a"]
+
+    def test_plan_keeps_two_pools_as_two_pool_sections(self):
+        manager = PoolGridManager()
+        matches = [
+            make_match(1, pool_name="Pool A"),
+            make_match(2, pool_name="Pool A"),
+            make_match(3, pool_name="Pool B"),
+            make_match(4, pool_name="Pool B"),
+            make_match(5, pool_name="Pool B"),
+            make_match(6, pool_name="Pool B"),
+        ]
+
+        plan = manager.plan(
+            matches,
+            container_width=120,
+            dom_has_pool=lambda _pool_name: False,
+            dom_has_section=lambda _section_id: False,
+        )
+
+        assert plan.num_columns == 2
+        assert [section.title for section in plan.sections] == ["Pool A", "Pool B"]
+        assert [section.section_id for section in plan.sections] == [
+            "pool-pool-a",
+            "pool-pool-b",
+        ]
+        assert [section.column_index for section in plan.sections] == [0, 1]
+
+    def test_pool_ids_are_safe_for_event_prefixed_pool_names(self):
+        manager = PoolGridManager()
+
+        assert manager.pool_id("Melee Singles! (7:30 Start) - Bracket - Pool A") == (
+            "pool-melee-singles-7-30-start-bracket-pool-a"
+        )
+
+        plan = manager.plan(
+            [
+                make_match(
+                    1,
+                    pool_name="Melee Singles! (7:30 Start) - Bracket - Pool A",
+                ),
+                make_match(2, pool_name="Melee Doubles - Bracket - Pool A"),
+            ],
+            container_width=120,
+            dom_has_pool=lambda _pool_name: False,
+            dom_has_section=lambda _section_id: False,
+        )
+
+        assert [section.section_id for section in plan.sections] == [
+            "pool-melee-doubles-bracket-pool-a",
+            "pool-melee-singles-7-30-start-bracket-pool-a",
+        ]
+
+    def test_plan_detects_missing_split_lane_dom(self):
+        manager = PoolGridManager()
+        matches = [make_match(match_id) for match_id in range(1, 8)]
+        initial_plan = manager.plan(
+            matches,
+            container_width=120,
+            dom_has_pool=lambda _pool_name: True,
+            dom_has_section=lambda _section_id: True,
+        )
+        manager.current_pool_names = {"Pool A"}
+        manager.current_layout_signature = initial_plan.layout_signature
+
+        plan = manager.plan(
+            matches,
+            container_width=120,
+            dom_has_pool=lambda _pool_name: True,
+            dom_has_section=lambda section_id: section_id == "pool-pool-a",
+        )
+
+        assert plan.rebuild_needed
+        assert plan.structure_changed
+        assert not plan.dom_in_sync
+        assert not plan.layout_changed
+
     def test_plan_skips_rebuild_when_layout_and_dom_match(self):
         manager = PoolGridManager()
         initial_plan = manager.plan(
@@ -90,3 +208,4 @@ class TestPoolGridManager:
 
         assert manager.current_pool_names == set()
         assert manager.current_layout_signature is None
+        assert manager.current_sections == ()

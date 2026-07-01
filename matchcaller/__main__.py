@@ -1,6 +1,7 @@
 """Main entry point for the tournament display application."""
 
 import argparse
+import os
 import sys
 import time
 
@@ -25,6 +26,85 @@ def _normalize_short_url(short_url: str) -> str:
     return normalized
 
 
+def _is_event_slug(slug: str) -> bool:
+    """Return whether a normalized start.gg slug points at a specific event."""
+    return "/event/" in slug
+
+
+def _is_auto_event_filter(event_filter: str | None) -> bool:
+    """Return whether event selection should combine active tournament events."""
+    return (event_filter or "").lower() == "auto"
+
+
+def _normalize_event_filter(event_filter: str | None) -> str | None:
+    """Normalize a CLI/env event filter value."""
+    if event_filter is None:
+        return None
+    normalized = event_filter.strip()
+    return normalized or None
+
+
+def _bare_tournament_slug(slug: str) -> str:
+    """Return the tournament-name part from a start.gg tournament path."""
+    normalized = _normalize_short_url(slug)
+    if normalized.startswith("tournament/"):
+        parts = normalized.split("/")
+        if len(parts) >= 2:
+            return parts[1]
+    return normalized.split("/")[0]
+
+
+def _tournament_lookup_candidates(tournament_slug: str) -> list[str]:
+    """Build start.gg tournament slug variants to try for event discovery."""
+    normalized = _normalize_short_url(tournament_slug)
+    if normalized.startswith("tournament/"):
+        parts = normalized.split("/")
+        if len(parts) >= 2:
+            normalized = f"tournament/{parts[1]}"
+
+    candidates = [normalized]
+    bare_slug = _bare_tournament_slug(normalized)
+    full_slug = f"tournament/{bare_slug}"
+    for candidate in (bare_slug, full_slug):
+        if candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def _resolve_event_from_tournament(
+    api,
+    tournament_slug: str,
+    event_filter: str | None,
+) -> tuple[str, str]:
+    """Resolve a tournament slug/page to a selected event slug."""
+    import asyncio
+    from .api.dashboard_api import derive_tournament_slug_from_event_slug
+
+    normalized = _normalize_short_url(tournament_slug)
+    if _is_event_slug(normalized):
+        resolved_tournament_slug = (
+            derive_tournament_slug_from_event_slug(normalized)
+            or _bare_tournament_slug(normalized)
+        )
+        return normalized, resolved_tournament_slug
+
+    for lookup_slug in _tournament_lookup_candidates(normalized):
+        events = asyncio.run(api.get_events_for_tournament(lookup_slug))
+        if not events:
+            continue
+
+        chosen = _choose_event(events, event_filter)
+        resolved_tournament_slug = (
+            derive_tournament_slug_from_event_slug(chosen["slug"])
+            or _bare_tournament_slug(lookup_slug)
+        )
+        log(f"✅ Resolved tournament slug: {resolved_tournament_slug}")
+        log(f"✅ Selected event: {chosen['name']} (slug: {chosen['slug']})")
+        return chosen["slug"], resolved_tournament_slug
+
+    raise RuntimeError(f"No events found for tournament: {normalized}")
+
+
 def _is_abbey_short_url(short_url: str) -> bool:
     """Return whether a short URL is the Abbey weekly shortcut."""
     return _normalize_short_url(short_url) == "abbey"
@@ -35,28 +115,51 @@ def _choose_event(
     event_filter: str | None,
 ) -> dict[str, str]:
     """Pick the event matching the user's filter, avoiding waitlists when possible."""
-    chosen = None
+    viable_events = [
+        ev for ev in events
+        if "waitlist" not in ev["name"].lower()
+    ] or events
+
+    def event_matches(event: dict[str, str], keyword: str) -> bool:
+        return keyword in event["name"].lower() or keyword in event["slug"].lower()
+
+    def first_matching(keywords: tuple[str, ...]) -> dict[str, str] | None:
+        for keyword in keywords:
+            for event in viable_events:
+                if event_matches(event, keyword):
+                    return event
+        return None
+
     if event_filter:
         keyword = event_filter.lower()
+        if keyword == "auto":
+            return (
+                first_matching(("doubles", "teams", "2v2"))
+                or first_matching(("singles",))
+                or viable_events[0]
+            )
+
         matches = [
             ev for ev in events
-            if keyword in ev["name"].lower() or keyword in ev["slug"].lower()
+            if event_matches(ev, keyword)
         ]
         non_waitlist = [
             ev for ev in matches
             if "waitlist" not in ev["name"].lower()
         ]
         if non_waitlist:
-            chosen = non_waitlist[0]
-        elif matches:
-            chosen = matches[0]
-    return chosen or events[0]
+            return non_waitlist[0]
+        if matches:
+            return matches[0]
+
+    return events[0]
 
 
 class MatchCallerArgs(argparse.Namespace):
     token: str | None = None
     event: str | None = None
     slug: str | None = None
+    tournament: str | None = None
     short_url: str | None = None
     event_filter: str | None = None
     demo: bool = False
@@ -86,7 +189,16 @@ def main():
     parser.add_argument("--event", help="start.gg event ID")
     parser.add_argument(
         "--slug",
-        help="start.gg event slug (e.g., tournament/the-c-stick-55/event/melee-singles)",
+        help=(
+            "start.gg event slug/URL, or a tournament slug/page when paired with "
+            "--event-filter"
+        ),
+    )
+    parser.add_argument(
+        "--tournament",
+        "--tournament-slug",
+        dest="tournament",
+        help="start.gg tournament slug/page; use --event-filter to pick auto/singles/doubles",
     )
     parser.add_argument(
         "--short-url",
@@ -94,7 +206,10 @@ def main():
     )
     parser.add_argument(
         "--event-filter",
-        help="Keyword to match the right event when using --short-url (e.g., 'melee', 'singles')",
+        help=(
+            "Keyword to match the right event when selecting from a tournament "
+            "(auto, singles, doubles). Defaults to EVENT_FILTER when set."
+        ),
     )
     parser.add_argument("--demo", action="store_true", help="Run with demo data")
     parser.add_argument(
@@ -117,12 +232,17 @@ def main():
     )
 
     args: MatchCallerArgs = parser.parse_args(namespace=MatchCallerArgs())
+    if args.event_filter is None:
+        args.event_filter = os.environ.get("EVENT_FILTER")
+    args.event_filter = _normalize_event_filter(args.event_filter)
     resolved_tournament_slug = None
+    multi_event_tournament_slug = None
 
     log("🔍 Command line args:")
     log(f"   Token: {'***' if args.token else 'None'}")
     log(f"   Event: {args.event}")
     log(f"   Slug: {args.slug}")
+    log(f"   Tournament: {args.tournament}")
     log(f"   Short URL: {args.short_url}")
     log(f"   Event Filter: {args.event_filter}")
     log(f"   Demo: {args.demo}")
@@ -130,6 +250,42 @@ def main():
     log(f"   JsonBin ID: {args.jsonbin_id or 'None'}")
     log(f"   JsonBin Key: {'***' if args.jsonbin_key else 'None'}")
     log(f"   View: {args.view}")
+
+    if args.slug:
+        args.slug = _normalize_short_url(args.slug)
+
+    # Resolve a tournament slug/page to one event, unless auto mode should
+    # combine active singles/doubles events from that tournament on each refresh.
+    if args.token and not args.event and (args.tournament or args.slug):
+        tournament_arg = args.tournament
+        if not tournament_arg and args.slug and not _is_event_slug(args.slug):
+            tournament_arg = args.slug
+
+        if tournament_arg and _is_auto_event_filter(args.event_filter):
+            multi_event_tournament_slug = _bare_tournament_slug(tournament_arg)
+            resolved_tournament_slug = multi_event_tournament_slug
+            args.slug = None
+            log(
+                "🔍 Auto event mode enabled for tournament: "
+                f"{multi_event_tournament_slug}"
+            )
+        elif tournament_arg:
+            log(
+                "🔍 Resolving tournament event: "
+                f"{tournament_arg} filter={args.event_filter or 'first event'}"
+            )
+            try:
+                from .api import TournamentAPI
+
+                tmp_api = TournamentAPI(api_token=args.token)
+                args.slug, resolved_tournament_slug = _resolve_event_from_tournament(
+                    tmp_api,
+                    tournament_arg,
+                    args.event_filter,
+                )
+            except Exception as e:
+                log(f"❌ Failed to resolve tournament event: {e}")
+                sys.exit(1)
 
     # Resolve --short-url to a full event slug
     if args.short_url and args.token and not args.slug:
@@ -177,16 +333,29 @@ def main():
                 )
                 sys.exit(1)
 
-            # Pick the matching event, deprioritizing waitlist/staging events.
-            chosen = _choose_event(events, args.event_filter)
-            args.slug = chosen["slug"]
-            resolved_tournament_slug = (
-                tournament_slug
-                or derive_tournament_slug_from_event_slug(args.slug)
-                or short_url_slug
-            )
-            log(f"✅ Resolved tournament slug: {resolved_tournament_slug}")
-            log(f"✅ Selected event: {chosen['name']} (slug: {args.slug})")
+            if _is_auto_event_filter(args.event_filter):
+                first_event_slug = events[0].get("slug") if events else None
+                resolved_tournament_slug = (
+                    tournament_slug
+                    or derive_tournament_slug_from_event_slug(first_event_slug)
+                    or short_url_slug
+                )
+                multi_event_tournament_slug = resolved_tournament_slug
+                log(
+                    "✅ Auto event mode enabled for tournament: "
+                    f"{resolved_tournament_slug}"
+                )
+            else:
+                # Pick the matching event, deprioritizing waitlist/staging events.
+                chosen = _choose_event(events, args.event_filter)
+                args.slug = chosen["slug"]
+                resolved_tournament_slug = (
+                    tournament_slug
+                    or derive_tournament_slug_from_event_slug(args.slug)
+                    or short_url_slug
+                )
+                log(f"✅ Resolved tournament slug: {resolved_tournament_slug}")
+                log(f"✅ Selected event: {chosen['name']} (slug: {args.slug})")
         except Exception as e:
             log(f"❌ Failed to resolve short URL: {e}")
             sys.exit(1)
@@ -254,7 +423,11 @@ def main():
         slug_to_use = None
         tournament_slug_to_use = None
         view_mode_to_use = "main"
-    elif not args.token or (not args.event and not args.slug):
+    elif not args.token or (
+        not args.event
+        and not args.slug
+        and not multi_event_tournament_slug
+    ):
         log("🏆 Running in DEMO mode with mock data")
         log("   Use --token and (--event or --slug) for real data")
         log("   Press Ctrl+C to exit\n")
@@ -280,6 +453,18 @@ def main():
         )
         view_mode_to_use = args.view
 
+    api_source = None
+    if token_to_use and multi_event_tournament_slug:
+        from .api import MultiEventTournamentAPI
+
+        api_source = MultiEventTournamentAPI(
+            api_token=token_to_use,
+            tournament_slug=multi_event_tournament_slug,
+        )
+        event_to_use = None
+        slug_to_use = None
+        tournament_slug_to_use = multi_event_tournament_slug
+
     log(
         "🔍 Creating app with token: "
         f"{'***' if token_to_use else 'None'}, "
@@ -297,6 +482,8 @@ def main():
         app_kwargs["jsonbin_id"] = args.jsonbin_id
     if args.jsonbin_key is not None:
         app_kwargs["jsonbin_key"] = args.jsonbin_key
+    if api_source is not None:
+        app_kwargs["api"] = api_source
 
     app = TournamentDisplay(**app_kwargs)
 

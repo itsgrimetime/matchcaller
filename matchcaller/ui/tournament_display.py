@@ -171,7 +171,11 @@ class TournamentDisplay(App[None]):
         super().__init__()
         self.view_mode = ViewMode(view_mode)
         self.tournament_slug = tournament_slug
-        if "halloween" in (tournament_slug or event_slug or "").lower():
+        # Follow the tournament's branding, regardless of the calendar date/year.
+        if any(
+            "halloween" in (slug or "").lower()
+            for slug in (tournament_slug, event_slug)
+        ):
             self.register_theme(halloween_theme)
             self.theme = "halloween"
         self.dashboard_state: DashboardState | None = None

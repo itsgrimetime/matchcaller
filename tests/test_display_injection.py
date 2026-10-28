@@ -141,6 +141,14 @@ class TestDisplayInjection:
             ),
             ({"tournament_slug": "melee-abbey-tavern-165"}, "textual-dark"),
             (
+                {"tournament_slug": "halloween-at-abbey-2027"},
+                "halloween",
+            ),
+            (
+                {"tournament_slug": "melee-abbey-tavern-216-HALLOWEEN-bash"},
+                "halloween",
+            ),
+            (
                 {
                     "event_slug": (
                         "tournament/melee-abbey-tavern-164-halloween-edition"
@@ -149,6 +157,20 @@ class TestDisplayInjection:
                 },
                 "halloween",
             ),
+            (
+                {
+                    "tournament_slug": "melee-abbey-tavern-216",
+                    "event_slug": (
+                        "tournament/melee-abbey-tavern-216/event/halloween-doubles"
+                    ),
+                },
+                "halloween",
+            ),
+            (
+                {"event_slug": "tournament/melee-abbey-tavern-217/event/melee-doubles"},
+                "textual-dark",
+            ),
+            ({}, "textual-dark"),
         ],
     )
     async def test_tournament_selects_seasonal_theme(self, slug_kwargs, expected_theme):

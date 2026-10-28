@@ -8,6 +8,7 @@ Lightweight terminal-based tournament display for Raspberry Pi showing live matc
 - 🔄 **Auto-Update** - Pulls latest code changes on boot
 - 🌐 **Smart Network Handling** - Waits for WiFi before starting
 - 🔗 **Dynamic Tournament Resolution** - Auto-resolves short URLs (start.gg/abbey)
+- 🎃 **Special Editions** - Abbey discovery includes slugs such as `melee-abbey-tavern-164-halloween-edition`; Halloween tournaments automatically use the Halloween theme while keeping auto doubles/singles selection.
 - 🚀 **Auto-Start on Boot** - Zero-touch operation for Raspberry Pi
 - 📊 **Prioritized Match Display** - In Progress → Ready → Waiting
 - ⏱️ **Live Timers** - Real-time duration tracking

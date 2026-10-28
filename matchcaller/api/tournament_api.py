@@ -25,7 +25,11 @@ from ..utils.logging import log
 
 
 _ABBEY_NAME_RE = re.compile(r"^Melee @ Abbey Tavern #\d+$", re.IGNORECASE)
-_ABBEY_SLUG_RE = re.compile(r"^(?:tournament/)?(melee-abbey-tavern-\d+)$", re.IGNORECASE)
+# Special editions keep the weekly number and append a suffix, such as
+# melee-abbey-tavern-164-halloween-edition.
+_ABBEY_SLUG_RE = re.compile(
+    r"^(?:tournament/)?(melee-abbey-tavern-\d+(?:-[a-z0-9]+)*)$", re.IGNORECASE
+)
 
 
 def _parse_abbey_search_candidate(

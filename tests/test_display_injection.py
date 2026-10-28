@@ -132,6 +132,38 @@ class TestDisplayInjection:
     """Verify smaller Textual tests can use injected stubs directly."""
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "slug_kwargs, expected_theme",
+        [
+            (
+                {"tournament_slug": "melee-abbey-tavern-164-halloween-edition"},
+                "halloween",
+            ),
+            ({"tournament_slug": "melee-abbey-tavern-165"}, "textual-dark"),
+            (
+                {
+                    "event_slug": (
+                        "tournament/melee-abbey-tavern-164-halloween-edition"
+                        "/event/melee-doubles"
+                    )
+                },
+                "halloween",
+            ),
+        ],
+    )
+    async def test_tournament_selects_seasonal_theme(self, slug_kwargs, expected_theme):
+        app = TournamentDisplay(
+            **slug_kwargs,
+            api=StubTournamentSource([_single_match_state(state=2)]),
+            refresh_controller_factory=passive_refresh_controller_factory,
+        )
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.theme == expected_theme
+            assert app.total_sets == 1
+
+    @pytest.mark.asyncio
     async def test_app_uses_injected_tournament_source(self):
         source = StubTournamentSource([_single_match_state(state=2)])
         app = TournamentDisplay(

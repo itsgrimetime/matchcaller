@@ -697,6 +697,62 @@ class TestDemoMode:
             assert kwargs["event_slug"] == "tournament/melee-abbey-tavern-137/event/melee-singles"
             assert kwargs["tournament_slug"] == "melee-abbey-tavern-137"
 
+    @pytest.mark.parametrize("event_filter", ["auto", "doubles", "singles"])
+    def test_abbey_halloween_startup_preserves_event_selection(self, event_filter):
+        from unittest.mock import AsyncMock
+
+        tournament_slug = "melee-abbey-tavern-164-halloween-edition"
+        events = [
+            {
+                "id": str(index),
+                "name": f"Melee {name.title()}",
+                "slug": f"tournament/{tournament_slug}/event/melee-{name}",
+            }
+            for index, name in enumerate(("singles", "doubles"), start=1)
+        ]
+        test_args = [
+            "--token",
+            "real_token",
+            "--short-url",
+            "abbey",
+            "--event-filter",
+            event_filter,
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.api.TournamentAPI"
+        ) as mock_api_class, patch(
+            "matchcaller.api.MultiEventTournamentAPI"
+        ) as mock_multi_api_class, patch(
+            "matchcaller.utils.resolve.resolve_tournament_slug_from_unique_string"
+        ) as mock_resolver, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_api = mock_api_class.return_value
+            mock_api.get_events_for_tournament = AsyncMock(side_effect=[[], events])
+            mock_api.find_nearest_abbey_tournament_slug = AsyncMock(
+                return_value=tournament_slug
+            )
+
+            main()
+
+            mock_resolver.assert_not_called()
+            mock_api.find_nearest_abbey_tournament_slug.assert_awaited_once()
+            mock_api.get_events_for_tournament.assert_any_await(tournament_slug)
+            kwargs = mock_app_class.call_args.kwargs
+            assert kwargs["tournament_slug"] == tournament_slug
+            if event_filter == "auto":
+                mock_multi_api_class.assert_called_once_with(
+                    api_token="real_token", tournament_slug=tournament_slug
+                )
+                assert kwargs["api"] is mock_multi_api_class.return_value
+                assert kwargs["event_slug"] is None
+            else:
+                mock_multi_api_class.assert_not_called()
+                assert kwargs["event_slug"] == (
+                    f"tournament/{tournament_slug}/event/melee-{event_filter}"
+                )
+
     def test_simulate_mode_falls_back_to_main_view_when_ladder_requested(self):
         test_args = ["--simulate", "simulator_data/fake.json", "--view", "ladder"]
 

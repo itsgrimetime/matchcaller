@@ -307,6 +307,51 @@ class TestTransportInjection:
         assert variables["before"] == now + 30 * 24 * 60 * 60
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("prefix", ["", "tournament/"])
+    async def test_abbey_search_selects_nearby_halloween_edition(self, prefix):
+        now = 1_793_145_600
+        halloween_slug = "melee-abbey-tavern-164-halloween-edition"
+        transport = FakeTransport(
+            post_results=[
+                HTTPResult(
+                    status=200,
+                    text="",
+                    json_data={
+                        "data": {
+                            "tournaments": {
+                                "nodes": [
+                                    {
+                                        "name": "Other Abbey Halloween Tournament",
+                                        "slug": "tournament/other-abbey-halloween",
+                                        "startAt": now,
+                                    },
+                                    {
+                                        "name": "Melee @ Abbey Tavern #163",
+                                        "slug": "tournament/melee-abbey-tavern-163",
+                                        "startAt": now - 7 * 86400,
+                                    },
+                                    {
+                                        "name": "Melee @ Abbey Tavern #164 - Halloween Edition",
+                                        "slug": f"{prefix}{halloween_slug}",
+                                        "startAt": now - 3600,
+                                    },
+                                    {
+                                        "name": "Melee @ Abbey Tavern #165",
+                                        "slug": "tournament/melee-abbey-tavern-165",
+                                        "startAt": now + 7 * 86400,
+                                    },
+                                ]
+                            }
+                        }
+                    },
+                )
+            ]
+        )
+        api = TournamentAPI(api_token="test_token", transport=transport)
+
+        assert await api.find_nearest_abbey_tournament_slug(now=now) == halloween_slug
+
+    @pytest.mark.asyncio
     async def test_jsonbin_api_uses_injected_transport(self):
         transport = FakeTransport(
             get_results=[

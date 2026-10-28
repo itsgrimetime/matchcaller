@@ -55,11 +55,6 @@ halloween_theme = Theme(
     dark=True,
 )
 
-# Register in your App's on_mount method:
-# def on_mount(self) -> None:
-#     self.register_theme(halloween_theme)
-#     self.theme = "halloween"
-
 
 def _default_refresh_controller_factory(
     app: App[None],
@@ -176,6 +171,9 @@ class TournamentDisplay(App[None]):
         super().__init__()
         self.view_mode = ViewMode(view_mode)
         self.tournament_slug = tournament_slug
+        if "halloween" in (tournament_slug or event_slug or "").lower():
+            self.register_theme(halloween_theme)
+            self.theme = "halloween"
         self.dashboard_state: DashboardState | None = None
         self.dashboard_source: DashboardDataSource | None = dashboard_source
         if (
@@ -244,9 +242,6 @@ class TournamentDisplay(App[None]):
     def on_mount(self) -> None:
         """Initialize the app"""
         # Disable console logging when TUI starts
-
-        # self.register_theme(halloween_theme)
-        # self.theme = "halloween"
 
         set_console_logging(False)
 

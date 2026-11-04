@@ -115,13 +115,16 @@ def _choose_event(
     event_filter: str | None,
 ) -> dict[str, str]:
     """Pick the event matching the user's filter, avoiding waitlists when possible."""
+    from .api.multi_event_api import AMATEUR_KEYWORDS
+
     viable_events = [
         ev for ev in events
         if "waitlist" not in ev["name"].lower()
     ] or events
 
     def event_matches(event: dict[str, str], keyword: str) -> bool:
-        return keyword in event["name"].lower() or keyword in event["slug"].lower()
+        event_slug = event["slug"].lower().split("/event/")[-1]
+        return keyword in event["name"].lower() or keyword in event_slug
 
     def first_matching(keywords: tuple[str, ...]) -> dict[str, str] | None:
         for keyword in keywords:
@@ -132,6 +135,13 @@ def _choose_event(
 
     if event_filter:
         keyword = event_filter.lower()
+        if keyword in AMATEUR_KEYWORDS:
+            keywords = (keyword,) + tuple(
+                alias for alias in AMATEUR_KEYWORDS if alias != keyword
+            )
+            amateur_event = first_matching(keywords)
+            if amateur_event:
+                return amateur_event
         if keyword == "auto":
             return (
                 first_matching(("doubles", "teams", "2v2"))
@@ -198,7 +208,7 @@ def main():
         "--tournament",
         "--tournament-slug",
         dest="tournament",
-        help="start.gg tournament slug/page; use --event-filter to pick auto/singles/doubles",
+        help="start.gg tournament slug/page; use --event-filter to pick auto/singles/doubles/amateur",
     )
     parser.add_argument(
         "--short-url",
@@ -208,7 +218,8 @@ def main():
         "--event-filter",
         help=(
             "Keyword to match the right event when selecting from a tournament "
-            "(auto, singles, doubles). Defaults to EVENT_FILTER when set."
+            "(auto, singles, doubles, amateur/ammy). Auto includes amateur and "
+            "redemption brackets. Defaults to EVENT_FILTER when set."
         ),
     )
     parser.add_argument("--demo", action="store_true", help="Run with demo data")
@@ -255,7 +266,7 @@ def main():
         args.slug = _normalize_short_url(args.slug)
 
     # Resolve a tournament slug/page to one event, unless auto mode should
-    # combine active singles/doubles events from that tournament on each refresh.
+    # combine active singles/doubles/amateur events on each refresh.
     if args.token and not args.event and (args.tournament or args.slug):
         tournament_arg = args.tournament
         if not tournament_arg and args.slug and not _is_event_slug(args.slug):

@@ -300,6 +300,54 @@ class TestDemoMode:
             assert kwargs["tournament_slug"] == "more-than-friendlies-285"
             assert kwargs["api"] is mock_multi_api_class.return_value
 
+    @pytest.mark.parametrize("event_filter", ["ammy", "amateur", "redemption"])
+    @pytest.mark.parametrize("event_name", ["Amateur Singles", "Ammy", "Redemption Bracket"])
+    def test_amateur_event_filter_accepts_aliases(self, event_filter, event_name):
+        from unittest.mock import AsyncMock
+
+        events = [
+            {
+                "id": "1", "name": "Melee Singles",
+                "slug": "tournament/weekly/event/singles",
+            },
+            {
+                "id": "2", "name": event_name,
+                "slug": "tournament/weekly/event/side-bracket",
+            },
+        ]
+        test_args = [
+            "--token", "real_token", "--short-url", "weekly",
+            "--event-filter", event_filter,
+        ]
+
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.api.TournamentAPI"
+        ) as mock_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_api_class.return_value.get_events_for_tournament = AsyncMock(
+                return_value=events
+            )
+
+            main()
+
+            assert mock_app_class.call_args.kwargs["event_slug"] == events[1]["slug"]
+
+    @pytest.mark.parametrize("keyword", ["amateur", "ammy", "redemption"])
+    def test_amateur_filter_prefers_requested_name_over_other_aliases(self, keyword):
+        from matchcaller.__main__ import _choose_event
+
+        events = [
+            {
+                "id": name,
+                "name": f"Melee {name.title()}",
+                "slug": f"tournament/amateur-weekly/event/{name}",
+            }
+            for name in ("singles", "amateur", "ammy", "redemption")
+        ]
+
+        assert _choose_event(events, keyword)["id"] == keyword
+
     def test_event_filter_cli_overrides_auto_environment(self, monkeypatch):
         from unittest.mock import AsyncMock
 

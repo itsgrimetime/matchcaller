@@ -5,6 +5,7 @@ Lightweight terminal-based tournament display for Raspberry Pi showing live matc
 ## Features
 
 - 🎮 **Live Tournament Data** - Real-time match updates from start.gg API
+- 🏆 **Amateur Brackets** - Auto mode includes separate amateur, ammy, and redemption events alongside singles and doubles, with separate pool labels. New events are discovered on each refresh.
 - 🔄 **Auto-Update** - Pulls latest code changes on boot
 - 🌐 **Smart Network Handling** - Waits for WiFi before starting
 - 🔗 **Dynamic Tournament Resolution** - Auto-resolves short URLs (start.gg/abbey)
@@ -92,6 +93,12 @@ python -m matchcaller --token TOKEN --slug "tournament/name/event/singles"
 # Pick an event from a tournament page, such as doubles
 python -m matchcaller --token TOKEN --tournament "tournament/name" --event-filter doubles
 
+# Show active singles, doubles, and amateur brackets together
+python -m matchcaller --token TOKEN --short-url abbey --event-filter auto
+
+# Show just the amateur bracket (amateur/ammy/redemption are accepted aliases)
+python -m matchcaller --token TOKEN --short-url abbey --event-filter ammy
+
 # Auto-resolve from short URL (requires start_matchcaller.sh)
 ./start_matchcaller.sh
 ```
@@ -102,7 +109,7 @@ Edit `start_matchcaller.sh`:
 
 ```bash
 SHORT_URL="abbey"           # Your start.gg short URL
-EVENT_FILTER="auto"          # auto tracks active doubles/singles; use singles/doubles to force
+EVENT_FILTER="auto"          # tracks singles/doubles/amateur; use an event keyword to force one
 NETWORK_TIMEOUT=120          # Max seconds to wait for network
 ```
 
@@ -111,6 +118,11 @@ Set API token in `~/.bashrc`:
 ```bash
 export STARTGG_API_TOKEN="your-actual-token-here"
 ```
+
+The startup script defaults to `auto`. If `EVENT_FILTER` is already set to
+`singles` or `doubles` in the environment, set it to `auto` to include the amateur
+event. Amateur events are recognized by `amateur`, `ammy`, or `redemption` in
+their event name or event slug; waitlists, staging events, and ladders are skipped.
 
 ## Key Components
 

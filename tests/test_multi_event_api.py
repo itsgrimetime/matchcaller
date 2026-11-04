@@ -125,6 +125,14 @@ def _main_events() -> list[dict]:
     ]
 
 
+def _amateur_event() -> dict:
+    return {
+        "id": "3",
+        "name": "Melee Amateur Singles",
+        "slug": "tournament/weekly/event/amateur-singles",
+    }
+
+
 @pytest.mark.unit
 class TestMultiEventTournamentAPI:
     @pytest.mark.asyncio
@@ -197,6 +205,131 @@ class TestMultiEventTournamentAPI:
         assert result.event_name == "Melee Singles"
         assert len(result.sets) == 1
         assert result.sets[0].poolName == "Melee Singles - Pools - Pool A"
+
+    @pytest.mark.asyncio
+    async def test_fetch_sets_keeps_amateur_pools_separate_from_main_events(self):
+        transport = FakeTransport(
+            [
+                # Amateur appears before main singles in the API's event order.
+                _result(_events_payload([_amateur_event()] + _main_events())),
+                _result(_event_sets_payload("Melee Doubles", [_set_node(20, prefix="D")])),
+                _result(_event_sets_payload("Melee Singles", [_set_node(10, prefix="S")])),
+                _result(_event_sets_payload("Melee Amateur Singles", [_set_node(30, prefix="A")])),
+            ]
+        )
+        api = MultiEventTournamentAPI(
+            api_token="token", tournament_slug="weekly", transport=transport
+        )
+
+        result = await api.fetch_sets()
+
+        assert result.event_name == "Melee Doubles + Melee Singles + Melee Amateur Singles"
+        assert [match.id for match in result.sets] == [20, 10, 30]
+        assert [match.poolName for match in result.sets] == [
+            "Melee Doubles - Pools - Pool A",
+            "Melee Singles - Pools - Pool A",
+            "Melee Amateur Singles - Pools - Pool A",
+        ]
+        assert [call["payload"]["variables"]["eventId"] for call in transport.post_calls[1:]] == [
+            "2", "1", "3"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_refresh_discovers_new_amateur_event_and_drops_it_when_empty(self):
+        transport = FakeTransport(
+            [
+                _result(_events_payload(_main_events())),
+                _result(_event_sets_payload("Melee Doubles", [])),
+                _result(_event_sets_payload("Melee Singles", [_set_node(10, prefix="S")])),
+                _result(_events_payload(_main_events() + [_amateur_event()])),
+                _result(_event_sets_payload("Melee Doubles", [])),
+                _result(_event_sets_payload("Melee Singles", [])),
+                _result(_event_sets_payload("Melee Amateur Singles", [_set_node(30, prefix="A")])),
+                _result(_events_payload(_main_events() + [_amateur_event()])),
+                _result(_event_sets_payload("Melee Doubles", [])),
+                _result(_event_sets_payload("Melee Singles", [])),
+                _result(_event_sets_payload("Melee Amateur Singles", [])),
+            ]
+        )
+        api = MultiEventTournamentAPI(
+            api_token="token", tournament_slug="weekly", transport=transport
+        )
+
+        initial = await api.fetch_sets()
+        assert initial.event_name == "Melee Singles"
+        assert [match.id for match in initial.sets] == [10]
+
+        amateur = await api.fetch_sets()
+        assert amateur.event_name == "Melee Amateur Singles"
+        assert [match.id for match in amateur.sets] == [30]
+
+        finished = await api.fetch_sets()
+        assert finished.sets == []
+        assert finished.event_name == "No active singles/doubles/amateur matches"
+
+    @pytest.mark.parametrize(
+        "name, event_slug",
+        [
+            ("Melee Amateur Singles", "side-bracket"),
+            ("AMMY", "side-bracket"),
+            ("Redemption Bracket - Melee Singles", "side-bracket"),
+            ("Side Bracket", "amateur"),
+            ("Side Bracket", "ammy"),
+            ("Side Bracket", "redemption"),
+        ],
+    )
+    def test_select_main_events_includes_amateur_aliases(self, name, event_slug):
+        amateur = {
+            "id": "3", "name": name, "slug": f"tournament/weekly/event/{event_slug}"
+        }
+
+        selected = select_main_events([amateur] + _main_events())
+
+        assert [event["id"] for event in selected] == ["2", "1", "3"]
+
+    def test_select_main_events_includes_multiple_amateur_brackets(self):
+        amateur = _amateur_event()
+        redemption = {
+            "id": "4", "name": "Redemption", "slug": "tournament/weekly/event/redemption"
+        }
+
+        selected = select_main_events([amateur, redemption] + _main_events())
+
+        assert [event["id"] for event in selected] == ["2", "1", "3", "4"]
+
+    def test_select_main_events_uses_main_fallback_alongside_amateur(self):
+        main = {
+            "id": "1", "name": "Main Bracket", "slug": "tournament/weekly/event/main"
+        }
+
+        selected = select_main_events([_amateur_event(), main])
+
+        assert [event["id"] for event in selected] == ["1", "3"]
+
+    def test_tournament_name_does_not_classify_every_event_as_amateur(self):
+        events = [
+            {
+                "id": str(index),
+                "name": "Melee Singles",
+                "slug": f"tournament/amateur-weekly/event/singles-{index}",
+            }
+            for index in (1, 2)
+        ]
+
+        assert select_main_events(events) == [events[0]]
+
+    @pytest.mark.parametrize("keyword", ["waitlist", "ladder", "staging"])
+    def test_amateur_waitlist_ladder_and_staging_events_are_excluded(self, keyword):
+        ignored = {
+            "id": "4",
+            "name": f"Amateur {keyword.title()}",
+            "slug": f"tournament/weekly/event/ammy-{keyword}",
+        }
+
+        assert select_main_events([ignored]) == []
+        assert select_main_events([ignored] + _main_events()) == [
+            _main_events()[1], _main_events()[0]
+        ]
 
     def test_select_main_events_ignores_waitlists_and_ladder_events(self):
         selected = select_main_events(

@@ -103,7 +103,7 @@ Edit `start_matchcaller.sh`:
 
 ```bash
 SHORT_URL="abbey"           # Your short URL
-EVENT_FILTER="auto"          # auto tracks active doubles/singles; use singles/doubles to force
+EVENT_FILTER="auto"          # tracks singles/doubles/amateur; use an event keyword to force one
 NETWORK_TIMEOUT=120          # Network wait (seconds)
 ```
 

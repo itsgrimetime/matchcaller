@@ -187,7 +187,7 @@ Edit `/home/pi/matchcaller/start_matchcaller.sh`:
 ```bash
 # Configuration section at top of file
 SHORT_URL="abbey"           # Your start.gg short URL
-EVENT_FILTER="auto"          # auto tracks active doubles/singles; use singles/doubles to force
+EVENT_FILTER="auto"          # tracks singles/doubles/amateur; use an event keyword to force one
 NETWORK_TIMEOUT=120          # Seconds to wait for WiFi (2 minutes)
 MATCHCALLER_DIR="/home/pi/matchcaller"  # Install directory
 ```

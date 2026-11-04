@@ -12,11 +12,12 @@ from .transport import AiohttpTransport, HTTPTransport
 
 DOUBLES_KEYWORDS = ("doubles", "teams", "2v2")
 SINGLES_KEYWORDS = ("singles",)
-IGNORED_EVENT_KEYWORDS = ("waitlist", "ladder", "redemption", "staging")
+AMATEUR_KEYWORDS = ("amateur", "ammy", "redemption")
+IGNORED_EVENT_KEYWORDS = ("waitlist", "ladder", "staging")
 
 
 class MultiEventTournamentAPI:
-    """Fetch active matches across the singles/doubles events in one tournament."""
+    """Fetch active singles, doubles, and amateur matches in one tournament."""
 
     def __init__(
         self,
@@ -83,7 +84,7 @@ class MultiEventTournamentAPI:
         event_name = (
             " + ".join(active_event_names)
             if active_event_names
-            else "No active singles/doubles matches"
+            else "No active singles/doubles/amateur matches"
         )
         return TournamentState(
             event_name=event_name,
@@ -93,37 +94,30 @@ class MultiEventTournamentAPI:
 
 
 def select_main_events(events: Iterable[dict[str, str]]) -> list[dict[str, str]]:
-    """Select doubles plus singles/main bracket events from tournament events."""
-    all_events = list(events)
+    """Select the main singles/doubles events plus any amateur brackets."""
     viable_events = [
-        event for event in all_events
+        event for event in events
         if not _has_any_keyword(event, IGNORED_EVENT_KEYWORDS)
     ]
-    if not viable_events:
-        viable_events = all_events
+    amateur_events = [
+        event for event in viable_events
+        if _has_any_keyword(event, AMATEUR_KEYWORDS)
+    ]
+    main_events = [event for event in viable_events if event not in amateur_events]
 
     doubles_events = [
-        event for event in viable_events
+        event for event in main_events
         if _has_any_keyword(event, DOUBLES_KEYWORDS)
     ]
     singles_events = [
-        event for event in viable_events
+        event for event in main_events
         if _has_any_keyword(event, SINGLES_KEYWORDS)
     ]
 
-    selected: list[dict[str, str]] = []
-    selected.extend(doubles_events[:1])
-    if singles_events:
-        selected.extend(singles_events[:1])
-    else:
-        selected_slugs = {
-            selected_event.get("slug") for selected_event in selected
-        }
-        selected.extend(
-            event
-            for event in viable_events[:1]
-            if event.get("slug") not in selected_slugs
-        )
+    selected = doubles_events[:1]
+    for event in (singles_events[:1] or main_events[:1]) + amateur_events:
+        if event not in selected:
+            selected.append(event)
 
     return selected
 
@@ -133,7 +127,7 @@ def prefix_sets_for_event(
     *,
     event_name: str,
 ) -> list[MatchData]:
-    """Prefix pool names so singles and doubles pools do not collapse together."""
+    """Prefix pool names so different events' pools do not collapse together."""
     return [
         set_data.model_copy(
             update={
@@ -157,5 +151,6 @@ def _event_prefixed_label(event_name: str, value: str | None) -> str:
 
 
 def _has_any_keyword(event: dict[str, str], keywords: tuple[str, ...]) -> bool:
-    haystack = f"{event.get('name', '')} {event.get('slug', '')}".lower()
+    event_slug = event.get("slug", "").split("/event/")[-1]
+    haystack = f"{event.get('name', '')} {event_slug}".lower()
     return any(keyword in haystack for keyword in keywords)

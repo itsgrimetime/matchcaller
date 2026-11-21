@@ -126,6 +126,7 @@ class TournamentState(DictCompatibleBaseModel):
     event_name: str
     tournament_name: str
     sets: list[MatchData]
+    finals_pending: bool = False
 
 
 class TimelineEvent(DictCompatibleBaseModel):
@@ -178,6 +179,9 @@ class MatchRow:
         self.pool: str = set_data.poolName or "Unknown Pool"
         self.pool_label = set_data.pool_label
         self.is_round_robin = set_data.bracket_type == ROUND_ROBIN
+        self.is_seeded_elimination = (
+            set_data.bracket_type == DOUBLE_ELIMINATION and bool(set_data.pool_label)
+        )
         self.round_number = set_data.round_number
         self.player1: str = set_data.player1.tag if set_data.player1 else "TBD"
         self.player2: str = set_data.player2.tag if set_data.player2 else "TBD"

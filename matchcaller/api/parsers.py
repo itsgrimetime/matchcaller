@@ -39,9 +39,8 @@ def parse_event_sets_response(
         event_name = event.name
         tournament_name = event.tournament.name if event.tournament else "Unknown Tournament"
         sets_data = event.sets.nodes if event.sets else []
-        has_round_robin = any(
-            phase.bracketType == ROUND_ROBIN for phase in (event.phases or [])
-        )
+        bracket_types = {phase.bracketType for phase in (event.phases or [])}
+        has_round_robin = ROUND_ROBIN in bracket_types
 
         parsed_sets = [
             parsed_set
@@ -53,6 +52,17 @@ def parse_event_sets_response(
             event_name=event_name,
             tournament_name=tournament_name,
             sets=parsed_sets,
+            finals_pending=(
+                has_round_robin
+                and DOUBLE_ELIMINATION in bracket_types
+                and bool(sets_data)
+                and not any(
+                    match.bracket_type == DOUBLE_ELIMINATION
+                    and match.player1.tag != "TBD"
+                    and match.player2.tag != "TBD"
+                    for match in parsed_sets
+                )
+            ),
         )
     except Exception:
         if fallback_to_mock:

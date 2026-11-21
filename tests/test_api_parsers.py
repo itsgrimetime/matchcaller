@@ -166,8 +166,23 @@ class TestAPIParsers:
         result = parse_event_sets_response(validate_startgg_response(event_sets_raw))
 
         assert result.sets[0].poolName == "Elimination Bracket - Pool 1"
+        assert not result.finals_pending
         expected_label = "Double Elim - Bracket 1" if has_round_robin else None
         assert result.sets[0].pool_label == expected_label
+
+    def test_unseeded_finals_keep_stage_handoff_visible(self, event_sets_raw):
+        event = event_sets_raw["data"]["event"]
+        event["phases"] = [
+            {"bracketType": "ROUND_ROBIN"}, {"bracketType": "DOUBLE_ELIMINATION"},
+        ]
+        node = event["sets"]["nodes"][0]
+        node["phaseGroup"]["bracketType"] = "DOUBLE_ELIMINATION"
+        node["slots"] = [{"entrant": None}, {"entrant": None}]
+
+        result = parse_event_sets_response(validate_startgg_response(event_sets_raw))
+
+        assert not result.sets
+        assert result.finals_pending
 
     def test_round_robin_retains_round_number_and_names_generic_pool(self, event_sets_raw):
         node = event_sets_raw["data"]["event"]["sets"]["nodes"][0]

@@ -53,6 +53,7 @@ class MultiEventTournamentAPI:
 
         active_states: list[tuple[dict[str, str], TournamentState]] = []
         last_tournament_name = self.tournament_slug
+        finals_pending = False
         for event in selected_events:
             try:
                 event_api = TournamentAPI(
@@ -70,6 +71,7 @@ class MultiEventTournamentAPI:
                 continue
 
             last_tournament_name = state.tournament_name or last_tournament_name
+            finals_pending = finals_pending or state.finals_pending
             if state.sets:
                 active_states.append((event, state))
 
@@ -94,6 +96,7 @@ class MultiEventTournamentAPI:
             event_name=event_name,
             tournament_name=last_tournament_name,
             sets=combined_sets,
+            finals_pending=finals_pending,
         )
 
 

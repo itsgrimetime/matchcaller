@@ -20,6 +20,7 @@ class DisplaySnapshot:
     ready_sets: int
     in_progress_sets: int
     last_update: str
+    finals_pending: bool = False
 
 
 def _count_matches(matches: Sequence[MatchRow], state: MatchState) -> int:
@@ -45,6 +46,7 @@ def build_display_snapshot(
         ready_sets=_count_matches(matches, MatchState.READY),
         in_progress_sets=_count_matches(matches, MatchState.IN_PROGRESS),
         last_update=now.strftime("%H:%M:%S"),
+        finals_pending=data.finals_pending,
     )
 
 

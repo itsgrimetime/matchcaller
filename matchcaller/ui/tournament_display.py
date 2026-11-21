@@ -9,7 +9,7 @@ from textual.binding import BindingType
 try:
     from textual import work
     from textual.app import App, ComposeResult
-    from textual.containers import Horizontal, ScrollableContainer, Vertical
+    from textual.containers import Horizontal, ScrollableContainer, Vertical, VerticalScroll
     from textual.reactive import reactive
     from textual.widgets import Footer, Header, Static
 except ImportError:
@@ -21,6 +21,7 @@ from ..api import TournamentAPI, TournamentDashboardAPI
 from ..api.jsonbin_api import AlertData, JsonBinAPI
 from ..models import MatchRow
 from ..models.dashboard import DashboardState, ViewMode
+from .call_board import build_call_board, uses_call_board
 from .dependencies import (
     AlertSource,
     DashboardDataSource,
@@ -98,6 +99,17 @@ class TournamentDisplay(App[None]):
     #pools-container {
         width: 1fr;
         height: 1fr;
+    }
+
+    #call-board {
+        width: 1fr;
+        height: 1fr;
+        padding: 1 2;
+    }
+
+    #call-board-content {
+        width: 1fr;
+        height: auto;
     }
 
     .pool-column {
@@ -210,6 +222,7 @@ class TournamentDisplay(App[None]):
             dashboard_grid or DashboardGridManager()
         )
         self.matches: list[MatchRow] = []
+        self.finals_pending = False
         # Set initial title - will be updated when tournament data is loaded
         self.title = "Loading Tournament..."
         self.poll_interval: float = poll_interval
@@ -277,6 +290,7 @@ class TournamentDisplay(App[None]):
         """Show loading message while fetching data"""
         self.event_name = "Fetching tournament data from start.gg..."
         self.matches = []
+        self.finals_pending = False
         self.total_sets = 0
         self.ready_sets = 0
         self.in_progress_sets = 0
@@ -301,6 +315,7 @@ class TournamentDisplay(App[None]):
         self.event_name = snapshot.event_name
         self.title = snapshot.title
         self.matches = snapshot.matches
+        self.finals_pending = snapshot.finals_pending
         self.total_sets = snapshot.total_sets
         self.ready_sets = snapshot.ready_sets
         self.in_progress_sets = snapshot.in_progress_sets
@@ -483,8 +498,35 @@ class TournamentDisplay(App[None]):
         finally:
             self.refresh_controller.finish_ui_mutation(flush_update=self.update_table)
 
+    def _update_call_board(self, pools_container: Horizontal) -> None:
+        content = build_call_board(self.matches, self.alerts, finals_pending=self.finals_pending)
+        board = pools_container.query("#call-board-content")
+        if board:
+            board.first(Static).update(content)
+            return
+
+        self.refresh_controller.begin_ui_mutation()
+        widget = VerticalScroll(Static(content, id="call-board-content"), id="call-board")
+        self.run_worker(
+            self._mount_call_board(pools_container, widget),
+            group="ui",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _mount_call_board(self, container: Horizontal, board: VerticalScroll) -> None:
+        try:
+            with self.batch_update():
+                await container.remove_children()
+                await container.mount(board)
+            self.pool_grid.reset()
+        except Exception as e:
+            log(f"❌ Error mounting the call board: {e}")
+        finally:
+            self.refresh_controller.finish_ui_mutation(flush_update=self.update_table)
+
     def update_table(self) -> None:
-        """Update the matches display with vertical pool columns"""
+        """Update the active match view."""
         log(f"🔄 update_table() called with {len(self.matches)} matches")
 
         if self.refresh_controller.ui_busy:
@@ -498,6 +540,10 @@ class TournamentDisplay(App[None]):
             and self.dashboard_state.resolved_view != ViewMode.MAIN
         ):
             self.rebuild_dashboard()
+            return
+
+        if uses_call_board(self.matches, finals_pending=self.finals_pending):
+            self._update_call_board(pools_container)
             return
 
         if not self.matches:
@@ -585,6 +631,9 @@ class TournamentDisplay(App[None]):
             except Exception as e:
                 log(f"⚠️ Could not update dashboard display: {e}")
                 self.dashboard_grid.reset()
+            return
+
+        if uses_call_board(self.matches, finals_pending=self.finals_pending):
             return
 
         if not self.matches:

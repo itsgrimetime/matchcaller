@@ -136,6 +136,36 @@ def _amateur_event() -> dict:
 @pytest.mark.unit
 class TestMultiEventTournamentAPI:
     @pytest.mark.asyncio
+    async def test_fetch_sets_includes_both_brackets_at_a_doubles_only_tournament(self):
+        tournament_slug = "weekend-doubles"
+        events = [
+            {
+                "id": str(event_id),
+                "name": f"Melee Doubles ({session})",
+                "slug": f"tournament/{tournament_slug}/event/melee-doubles-{session}",
+            }
+            for event_id, session in enumerate(("early", "late"), start=1)
+        ]
+        transport = FakeTransport(
+            [
+                _result(_events_payload(events)),
+                _result(_event_sets_payload(events[0]["name"], [_set_node(10, prefix="E")])),
+                _result(_event_sets_payload(events[1]["name"], [_set_node(20, prefix="L")])),
+            ]
+        )
+        api = MultiEventTournamentAPI(
+            api_token="token", tournament_slug=tournament_slug, transport=transport
+        )
+
+        result = await api.fetch_sets()
+
+        assert [match.id for match in result.sets] == [10, 20]
+        assert [match.poolName for match in result.sets] == [
+            "Melee Doubles (early) - Pools - Pool A",
+            "Melee Doubles (late) - Pools - Pool A",
+        ]
+
+    @pytest.mark.asyncio
     async def test_fetch_sets_shows_doubles_when_only_doubles_has_active_sets(self):
         transport = FakeTransport(
             [

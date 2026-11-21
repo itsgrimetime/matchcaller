@@ -1,5 +1,6 @@
 """Tests for demo mode functionality"""
 
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -745,8 +746,35 @@ class TestDemoMode:
             assert kwargs["event_slug"] == "tournament/melee-abbey-tavern-137/event/melee-singles"
             assert kwargs["tournament_slug"] == "melee-abbey-tavern-137"
 
-    @pytest.mark.parametrize("event_filter", ["auto", "doubles", "singles"])
-    def test_abbey_halloween_startup_preserves_event_selection(self, event_filter):
+    def test_default_pi_launch_selects_weekend_doubles_on_event_day(self):
+        test_args = ["--token", "real_token", "--short-url", "abbey", "--event-filter", "auto"]
+        with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.__main__.datetime"
+        ) as mock_datetime, patch(
+            "matchcaller.api.MultiEventTournamentAPI"
+        ) as mock_multi_api_class, patch(
+            "matchcaller.__main__.TournamentDisplay"
+        ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_datetime.now.return_value = datetime(2026, 11, 21, 12)
+
+            main()
+
+            mock_multi_api_class.assert_called_once_with(
+                api_token="real_token", tournament_slug="weekend-doubles-abbey-tavern-1"
+            )
+            assert mock_app_class.call_args.kwargs["api"] is mock_multi_api_class.return_value
+
+    @pytest.mark.parametrize(
+        "event_filter, launch_date",
+        [
+            ("auto", datetime(2026, 10, 27)),
+            ("auto", datetime(2026, 11, 22)),
+            ("doubles", datetime(2026, 11, 21)),
+            ("singles", datetime(2026, 11, 21)),
+            ("ammy", datetime(2026, 11, 21)),
+        ],
+    )
+    def test_abbey_weekly_startup_preserves_event_selection(self, event_filter, launch_date):
         from unittest.mock import AsyncMock
 
         tournament_slug = "melee-abbey-tavern-164-halloween-edition"
@@ -756,7 +784,7 @@ class TestDemoMode:
                 "name": f"Melee {name.title()}",
                 "slug": f"tournament/{tournament_slug}/event/melee-{name}",
             }
-            for index, name in enumerate(("singles", "doubles"), start=1)
+            for index, name in enumerate(("singles", "doubles", "ammy"), start=1)
         ]
         test_args = [
             "--token",
@@ -768,6 +796,8 @@ class TestDemoMode:
         ]
 
         with patch("sys.argv", ["matchcaller.py"] + test_args), patch(
+            "matchcaller.__main__.datetime"
+        ) as mock_datetime, patch(
             "matchcaller.api.TournamentAPI"
         ) as mock_api_class, patch(
             "matchcaller.api.MultiEventTournamentAPI"
@@ -776,6 +806,7 @@ class TestDemoMode:
         ) as mock_resolver, patch(
             "matchcaller.__main__.TournamentDisplay"
         ) as mock_app_class, patch("matchcaller.__main__.time.sleep"):
+            mock_datetime.now.return_value = launch_date
             mock_api = mock_api_class.return_value
             mock_api.get_events_for_tournament = AsyncMock(side_effect=[[], events])
             mock_api.find_nearest_abbey_tournament_slug = AsyncMock(

@@ -114,7 +114,8 @@ def select_main_events(events: Iterable[dict[str, str]]) -> list[dict[str, str]]
         if _has_any_keyword(event, SINGLES_KEYWORDS)
     ]
 
-    selected = doubles_events[:1]
+    # Doubles-only tournaments may have more than one bracket or time slot.
+    selected = doubles_events[:1] if singles_events else doubles_events
     for event in (singles_events[:1] or main_events[:1]) + amateur_events:
         if event not in selected:
             selected.append(event)

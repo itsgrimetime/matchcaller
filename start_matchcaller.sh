@@ -7,7 +7,7 @@ set -e  # Exit on error
 
 # Configuration
 MATCHCALLER_DIR="/home/abbey/matchcaller"
-SHORT_URL="abbey"
+SHORT_URL="${SHORT_URL:-abbey}"
 EVENT_FILTER="${EVENT_FILTER:-auto}"  # auto tracks singles/doubles/amateur; override with an event keyword
 NETWORK_TIMEOUT=120  # 2 minutes
 API_TOKEN="${STARTGG_API_TOKEN:-}"  # Read from environment or set below

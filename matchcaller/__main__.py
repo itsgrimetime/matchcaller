@@ -4,6 +4,8 @@ import argparse
 import os
 import sys
 import time
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from .ui import TournamentDisplay
 from .utils.logging import log
@@ -108,6 +110,15 @@ def _resolve_event_from_tournament(
 def _is_abbey_short_url(short_url: str) -> bool:
     """Return whether a short URL is the Abbey weekly shortcut."""
     return _normalize_short_url(short_url) == "abbey"
+
+
+def _scheduled_abbey_tournament(short_url: str, event_filter: str | None) -> str | None:
+    """Select the special tournament for the Pi's default launch on event day."""
+    if _is_abbey_short_url(short_url) and _is_auto_event_filter(event_filter):
+        if datetime.now(ZoneInfo("America/Los_Angeles")).date() == date(2026, 11, 21):
+            # Use the canonical slug so boot works even if the shortcut redirect is blocked.
+            return "weekend-doubles-abbey-tavern-1"
+    return None
 
 
 def _choose_event(
@@ -264,6 +275,15 @@ def main():
 
     if args.slug:
         args.slug = _normalize_short_url(args.slug)
+
+    # The boot script pulls updates before launching Python, so the updated
+    # default takes effect on the reboot that fetches this change.
+    if args.token and args.short_url and not (args.event or args.slug or args.tournament):
+        scheduled_slug = _scheduled_abbey_tournament(args.short_url, args.event_filter)
+        if scheduled_slug:
+            log(f"🔍 Using scheduled Abbey tournament: {scheduled_slug}")
+            args.tournament = scheduled_slug
+            args.short_url = None
 
     # Resolve a tournament slug/page to one event, unless auto mode should
     # combine active singles/doubles/amateur events on each refresh.

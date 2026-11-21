@@ -99,7 +99,10 @@ python -m matchcaller --token TOKEN --short-url abbey --event-filter auto
 # Show just the amateur bracket (amateur/ammy/redemption are accepted aliases)
 python -m matchcaller --token TOKEN --short-url abbey --event-filter ammy
 
-# Auto-resolve from short URL (requires start_matchcaller.sh)
+# Use a different start.gg shortcut
+python -m matchcaller --token TOKEN --short-url https://www.start.gg/abbeydubs --event-filter auto
+
+# Auto-resolve the default short URL on the Pi
 ./start_matchcaller.sh
 ```
 
@@ -118,6 +121,11 @@ Set API token in `~/.bashrc`:
 ```bash
 export STARTGG_API_TOKEN="your-actual-token-here"
 ```
+
+To use a different shortcut on boot, export `SHORT_URL` in `~/.bashrc` before the
+auto-start block. On November 21, 2026 (Pacific time), the default `abbey` launch
+in `auto` mode opens Weekend Doubles @ Abbey Tavern #1. Later launches go back to
+weekly discovery.
 
 The startup script defaults to `auto`. If `EVENT_FILTER` is already set to
 `singles` or `doubles` in the environment, set it to `auto` to include the amateur

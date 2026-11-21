@@ -13,10 +13,8 @@ from .presentation import build_alert_tags
 
 
 def uses_call_board(matches: Sequence[MatchRow], *, finals_pending: bool) -> bool:
-    """Select the call board for round robin and the elimination stage it feeds."""
-    return finals_pending or any(
-        match.is_round_robin or match.is_seeded_elimination for match in matches
-    )
+    """Use the call board while pools are active or finals are awaiting seeds."""
+    return finals_pending or any(match.is_round_robin for match in matches)
 
 
 def build_call_board(

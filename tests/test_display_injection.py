@@ -290,9 +290,11 @@ class TestDisplayInjection:
 
             await pilot.press("r")
             await pilot.pause()
-            assert "DOUBLE-ELIMINATION FINALS" in board_text()
-            assert "Finals · Winners Round 1" in board_text()
-            assert "awaiting seeds" not in board_text()
+            title = app.query_one("#pool-elimination-bracket .pool-title", Static)
+            assert "Double Elim - Bracket 1" in str(title.render())
+            table = app.query_one("#pool-elimination-bracket DataTable", DataTable)
+            assert table.get_cell("1", "match") == "[bold]Alice vs Bob[/bold]"
+            assert not app.query("#call-board-content")
 
             await pilot.press("r")
             await pilot.pause()

@@ -18,6 +18,7 @@ from .presentation import (
     MATCH_TABLE_SEPARATOR_KEY,
     build_match_row,
     build_match_table_separator_row,
+    build_match_time,
     calculate_column_widths,
     sort_pool_matches,
 )
@@ -231,7 +232,7 @@ class DashboardGridManager:
 
         for index, match in enumerate(matches):
             try:
-                table.update_cell(str(index), "duration", match.time_since_ready)
+                table.update_cell(str(index), "duration", build_match_time(match))
             except Exception:
                 pass
 

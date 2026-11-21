@@ -7,6 +7,10 @@ from typing import Any
 from pydantic import BaseModel
 
 
+ROUND_ROBIN = "ROUND_ROBIN"
+DOUBLE_ELIMINATION = "DOUBLE_ELIMINATION"
+
+
 class DictCompatibleBaseModel(BaseModel):
     """Custom BaseModel with dictionary-style access for backward compatibility"""
 
@@ -43,6 +47,7 @@ class PlayerData(DictCompatibleBaseModel):
     id: int | None = None
     discord_id: str | None = None
     discord_username: str | None = None
+    team_tags: list[str] | None = None
 
 
 class EntrantSource(DictCompatibleBaseModel):
@@ -62,8 +67,11 @@ class MatchData(DictCompatibleBaseModel):
     display_name: str | None = None
     displayName: str | None = None
     poolName: str | None = None
+    pool_label: str | None = None
     phase_group: str | None = None
     phase_name: str | None = None
+    bracket_type: str | None = None
+    round_number: int | None = None
 
     # Players
     player1: PlayerData
@@ -168,8 +176,13 @@ class MatchRow:
             set_data.displayName or set_data.display_name or "Unknown Match"
         )
         self.pool: str = set_data.poolName or "Unknown Pool"
+        self.pool_label = set_data.pool_label
+        self.is_round_robin = set_data.bracket_type == ROUND_ROBIN
+        self.round_number = set_data.round_number
         self.player1: str = set_data.player1.tag if set_data.player1 else "TBD"
         self.player2: str = set_data.player2.tag if set_data.player2 else "TBD"
+        self._player1_team = self._compact_team_label(set_data.player1) if self.pool_label else None
+        self._player2_team = self._compact_team_label(set_data.player2) if self.pool_label else None
         self.state: int = set_data.state
         # Try both timestamp formats for compatibility
         self.updated_at: int = set_data.updatedAt or set_data.updated_at or 0
@@ -243,21 +256,32 @@ class MatchRow:
     @property
     def match_name(self) -> str:
         """Return normalized match name with TBD players at the end"""
+        player1_label = self._player1_team or self.player1
+        player2_label = self._player2_team or self.player2
         # Normalize TBD matches to always show <player> vs TBD
         if self.player1 == "TBD" and self.player2 != "TBD":
-            name = f"{self.player2[:12]} vs TBD"
+            name = f"{player2_label[:12]} vs TBD"
         elif self.player1 == "" and self.player2 != "" and self.player2 != "TBD":
-            name = f"{self.player2[:24]} vs TBD"
+            name = f"{player2_label[:24]} vs TBD"
         elif self.player2 == "" and self.player1 != "" and self.player1 != "TBD":
-            name = f"{self.player1[:24]} vs TBD"
+            name = f"{player1_label[:24]} vs TBD"
         else:
-            name = f"{self.player1[:12]} vs {self.player2[:12]}"
+            name = f"{player1_label[:12]} vs {player2_label[:12]}"
 
         if self.has_tbd_player:
             return self._style_tbd_cell(name)
         elif self.is_ready:
             return f"[bold]{name}[/bold]"
         return name
+
+    @staticmethod
+    def _compact_team_label(player: PlayerData | None) -> str | None:
+        """Keep both doubles tags visible within the 12-character team budget."""
+        if player is None or not player.team_tags or len(player.team_tags) != 2:
+            return None
+        first, second = player.team_tags
+        first_width = min(len(first), max(6, 11 - len(second)))
+        return f"{first[:first_width].rstrip()}/{second[:11 - first_width].rstrip()}"
 
     @property
     def has_tbd_player(self) -> bool:

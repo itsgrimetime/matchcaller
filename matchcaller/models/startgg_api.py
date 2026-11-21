@@ -45,6 +45,7 @@ class StartGGPhaseGroup(DictCompatibleBaseModel):
     """A phase group (e.g., Pool A, Pool B)"""
 
     displayIdentifier: str | None = None
+    bracketType: str | None = None
     phase: StartGGPhase | None = None
 
 
@@ -88,12 +89,17 @@ class StartGGTournament(DictCompatibleBaseModel):
     name: str
 
 
+class StartGGPhaseSummary(DictCompatibleBaseModel):
+    bracketType: str | None = None
+
+
 class StartGGEvent(DictCompatibleBaseModel):
     """An event within a tournament"""
 
     id: int | None = None
     name: str
     tournament: StartGGTournament | None = None
+    phases: list[StartGGPhaseSummary] | None = None
     sets: StartGGSetsContainer | None = None
 
 

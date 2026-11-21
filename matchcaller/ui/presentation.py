@@ -35,6 +35,7 @@ def sort_pool_matches(pool_matches: Sequence[MatchRow]) -> list[MatchRow]:
         key=lambda match: (
             match.has_tbd_player,
             match.sort_priority,
+            (match.round_number or 0) if match.is_round_robin else 0,
             -(match.updated_at or 0),
         ),
     )
@@ -156,8 +157,19 @@ def build_match_row(
     return [
         name,
         f"{match.status_icon} {match.status_text}",
-        match.time_since_ready,
+        build_match_time(match),
     ]
+
+
+def build_match_time(match: MatchRow) -> str:
+    """Show the scheduled round alongside the set timer in round robin."""
+    duration = match.time_since_ready
+    if match.is_round_robin and match.round_number:
+        round_label = f"R{match.round_number}"
+        if duration == "-" or not (match.is_ready or match.is_in_progress):
+            return round_label
+        return f"{round_label} {duration}"
+    return duration
 
 
 def build_match_table_separator_row(column_widths: ColumnWidths) -> list[str]:

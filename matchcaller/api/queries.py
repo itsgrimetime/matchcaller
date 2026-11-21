@@ -7,6 +7,9 @@ query EventSets($eventId: ID!, $page: Int!, $perPage: Int!) {
         tournament {
             name
         }
+        phases {
+            bracketType
+        }
         sets(
             page: $page
             perPage: $perPage
@@ -41,6 +44,7 @@ query EventSets($eventId: ID!, $page: Int!, $perPage: Int!) {
                 }
                 phaseGroup {
                     displayIdentifier
+                    bracketType
                     phase {
                         name
                     }

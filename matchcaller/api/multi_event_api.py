@@ -78,7 +78,11 @@ class MultiEventTournamentAPI:
         for event, state in active_states:
             active_event_names.append(event["name"])
             combined_sets.extend(
-                prefix_sets_for_event(state.sets, event_name=event["name"])
+                prefix_sets_for_event(
+                    state.sets,
+                    event_name=event["name"],
+                    qualify_pool_labels=len(selected_events) > 1,
+                )
             )
 
         event_name = (
@@ -127,12 +131,18 @@ def prefix_sets_for_event(
     sets: Iterable[MatchData],
     *,
     event_name: str,
+    qualify_pool_labels: bool = True,
 ) -> list[MatchData]:
     """Prefix pool names so different events' pools do not collapse together."""
     return [
         set_data.model_copy(
             update={
                 "poolName": _event_prefixed_label(event_name, set_data.poolName),
+                "pool_label": (
+                    f"{set_data.pool_label} - {event_name}"
+                    if set_data.pool_label and qualify_pool_labels
+                    else set_data.pool_label
+                ),
                 "phase_group": _event_prefixed_label(
                     event_name,
                     set_data.phase_group,

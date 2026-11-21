@@ -13,6 +13,7 @@ from .presentation import (
     MATCH_TABLE_SEPARATOR_KEY,
     build_match_row,
     build_match_table_separator_row,
+    build_match_time,
     calculate_column_widths,
     calculate_num_columns,
     calculate_single_pool_lanes,
@@ -21,6 +22,9 @@ from .presentation import (
     sort_pool_names,
     split_matches_into_lanes,
 )
+
+
+STAGED_POOL_MIN_COLUMN_WIDTH = 60
 
 
 @dataclass(frozen=True)
@@ -102,19 +106,22 @@ class PoolGridManager:
         pools = group_matches_by_pool(matches)
         new_pool_names = set(pools.keys())
         sorted_pools = sort_pool_names(pools.keys())
-        num_columns = calculate_num_columns(
-            len(sorted_pools),
-            total_matches=len(matches),
-            container_width=container_width,
-        )
+        if len(sorted_pools) == 1:
+            num_columns = calculate_single_pool_lanes(
+                num_pools=1, total_matches=len(matches), container_width=container_width
+            )
+        else:
+            num_columns = calculate_num_columns(len(sorted_pools))
+        if any(match.pool_label for match in matches):
+            num_columns = min(
+                num_columns, max(1, container_width // STAGED_POOL_MIN_COLUMN_WIDTH)
+            )
         column_widths = calculate_column_widths(container_width, num_columns)
         layout_signature = self.layout_signature(num_columns, column_widths)
         sections = self._build_sections(
             pools,
             sorted_pools,
             num_columns=num_columns,
-            container_width=container_width,
-            total_matches=len(matches),
         )
         if dom_has_section is None:
             dom_in_sync = all(dom_has_pool(pool_name) for pool_name in new_pool_names)
@@ -147,24 +154,21 @@ class PoolGridManager:
         sorted_pools: Sequence[str],
         *,
         num_columns: int,
-        container_width: int,
-        total_matches: int,
     ) -> tuple[PoolGridSectionPlan, ...]:
         """Build concrete table sections from pool data and layout rules."""
         sections: list[PoolGridSectionPlan] = []
-        single_pool_lane_count = calculate_single_pool_lanes(
-            num_pools=len(sorted_pools),
-            total_matches=total_matches,
-            container_width=container_width,
-        )
 
         for pool_index, pool_name in enumerate(sorted_pools):
             sorted_matches = sort_pool_matches(pools[pool_name])
-            lane_count = single_pool_lane_count if len(sorted_pools) == 1 else 1
+            first_match = sorted_matches[0]
+            pool_title = first_match.pool_label or pool_name or "Unknown Pool"
+            if first_match.is_round_robin:
+                pool_title = f"{pool_title} | {len(sorted_matches)} left"
+            lane_count = num_columns if len(sorted_pools) == 1 else 1
             lanes = split_matches_into_lanes(sorted_matches, lane_count)
 
             for lane_index, lane_matches in enumerate(lanes):
-                title = pool_name or "Unknown Pool"
+                title = pool_title
                 if len(lanes) > 1 and lane_index > 0:
                     title = f"{title} (cont.)"
 
@@ -191,13 +195,17 @@ class PoolGridManager:
         match_column_key: str,
         status_column_key: str,
         duration_column_key: str,
+        is_round_robin: bool = False,
     ) -> DataTable[str]:
         """Create a pool table configured for stable updates on narrow terminals."""
         match_width, status_width, duration_width = column_widths
         pool_table: DataTable[str] = DataTable(classes="pool-table")
         pool_table.add_column("Match", key=match_column_key, width=match_width)
         pool_table.add_column("Status", key=status_column_key, width=status_width)
-        pool_table.add_column("Duration", key=duration_column_key, width=duration_width)
+        duration_title = "Duration"
+        if is_round_robin:
+            duration_title = "Round / Time" if duration_width >= 12 else "R/Time"
+        pool_table.add_column(duration_title, key=duration_column_key, width=duration_width)
         pool_table.cursor_type = "none"
         pool_table.cell_padding = 0
         return pool_table
@@ -300,6 +308,7 @@ class PoolGridManager:
                     match_column_key=match_column_key,
                     status_column_key=status_column_key,
                     duration_column_key=duration_column_key,
+                    is_round_robin=section.matches[0].is_round_robin,
                 )
                 self.sync_pool_table(
                     pool_table,
@@ -347,6 +356,8 @@ class PoolGridManager:
         with pools_container.app.batch_update():
             for section in plan.sections:
                 pool_section = pools_container.query_one(f"#{section.section_id}")
+                if section.matches[0].is_round_robin:
+                    pool_section.query_one(".pool-title", Static).update(section.title)
                 pool_table = pool_section.query_one(DataTable)
                 self.sync_pool_table(
                     pool_table,
@@ -399,7 +410,7 @@ class PoolGridManager:
                     pools_table.update_cell(
                         str(match.id),
                         duration_column_key,
-                        match.time_since_ready,
+                        build_match_time(match),
                     )
                 except Exception:
                     pass

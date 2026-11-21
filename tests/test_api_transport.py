@@ -165,6 +165,26 @@ class TestTransportInjection:
         )
 
     @pytest.mark.asyncio
+    async def test_fetch_sets_restarts_pagination_when_api_rejects_query_complexity(self):
+        transport = FakeTransport(
+            post_results=[
+                HTTPResult(status=200, text="", json_data=_event_sets_payload([_set_node(1)])),
+                HTTPResult(status=400, text='{"message":"Query complexity too high."}'),
+                HTTPResult(status=200, text="", json_data=_event_sets_payload([_set_node(1)])),
+                HTTPResult(status=200, text="", json_data=_event_sets_payload([_set_node(2)])),
+            ]
+        )
+        api = TournamentAPI(api_token="test_token", event_id="12345", transport=transport)
+
+        result = await api.fetch_sets()
+
+        assert [match.id for match in result.sets] == [1, 2]
+        page_requests = [call["payload"]["variables"] for call in transport.post_calls]
+        assert [(req["page"], req["perPage"]) for req in page_requests] == [
+            (1, 80), (2, 80), (1, 40), (2, 40),
+        ]
+
+    @pytest.mark.asyncio
     async def test_fetch_sets_log_does_not_include_token_suffix(self):
         transport = FakeTransport(
             post_results=[

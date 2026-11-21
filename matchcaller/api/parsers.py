@@ -3,7 +3,13 @@
 import time
 from typing import Any
 
-from ..models.match import MatchData, PlayerData, TournamentState
+from ..models.match import (
+    DOUBLE_ELIMINATION,
+    ROUND_ROBIN,
+    MatchData,
+    PlayerData,
+    TournamentState,
+)
 from ..models.mock_data import MOCK_TOURNAMENT_DATA
 from ..models.startgg_api import (
     StartGGAPIResponse,
@@ -33,11 +39,14 @@ def parse_event_sets_response(
         event_name = event.name
         tournament_name = event.tournament.name if event.tournament else "Unknown Tournament"
         sets_data = event.sets.nodes if event.sets else []
+        has_round_robin = any(
+            phase.bracketType == ROUND_ROBIN for phase in (event.phases or [])
+        )
 
         parsed_sets = [
             parsed_set
             for set_data in sets_data
-            if (parsed_set := _parse_set(set_data)) is not None
+            if (parsed_set := _parse_set(set_data, has_round_robin=has_round_robin)) is not None
         ]
 
         return TournamentState(
@@ -97,7 +106,7 @@ def _require_event_sets_response(
     return api_response.data
 
 
-def _parse_set(set_data: StartGGSet) -> MatchData | None:
+def _parse_set(set_data: StartGGSet, *, has_round_robin: bool) -> MatchData | None:
     """Parse a single start.gg set into app match data."""
     player1 = _extract_player(set_data, 0)
     player2 = _extract_player(set_data, 1)
@@ -106,6 +115,8 @@ def _parse_set(set_data: StartGGSet) -> MatchData | None:
         return None
 
     bracket_name, pool_name = _build_names(set_data)
+    phase_group = set_data.phaseGroup
+    bracket_type = phase_group.bracketType if phase_group else None
     timestamp = set_data.updatedAt or int(time.time())
 
     return MatchData(
@@ -113,8 +124,11 @@ def _parse_set(set_data: StartGGSet) -> MatchData | None:
         display_name=bracket_name,
         displayName=bracket_name,
         poolName=pool_name,
+        pool_label=_stage_pool_label(phase_group, pool_name, has_round_robin),
         phase_group=pool_name,
         phase_name=pool_name,
+        bracket_type=bracket_type,
+        round_number=set_data.round,
         player1=player1,
         player2=player2,
         state=set_data.state,
@@ -143,11 +157,8 @@ def _extract_player(set_data: StartGGSet, slot_index: int) -> PlayerData:
 
     participants = slot.entrant.participants
     participant = participants[0]
-    tag = " / ".join(
-        participant.gamerTag
-        for participant in participants
-        if participant.gamerTag
-    ) or "TBD"
+    tags = [participant.gamerTag for participant in participants if participant.gamerTag]
+    tag = " / ".join(tags) or "TBD"
     discord_id: str | None = None
     discord_username: str | None = None
     if participant.user and participant.user.authorizations:
@@ -160,6 +171,7 @@ def _extract_player(set_data: StartGGSet, slot_index: int) -> PlayerData:
         id=None,
         discord_id=discord_id,
         discord_username=discord_username,
+        team_tags=tags if len(tags) > 1 else None,
     )
 
 
@@ -203,3 +215,29 @@ def _format_pool_identifier(raw_identifier: str) -> str:
     if raw_identifier.isalpha() and len(raw_identifier) == 1:
         return f"Pool {raw_identifier.upper()}"
     return raw_identifier
+
+
+def _stage_pool_label(
+    group: StartGGPhaseGroup | None,
+    pool_name: str,
+    has_round_robin: bool,
+) -> str | None:
+    """Give round-robin stages distinct headings without changing their keys."""
+    if not group:
+        return None
+    phase_name = group.phase.name if group.phase else ""
+    identifier = group.displayIdentifier
+
+    if group.bracketType == ROUND_ROBIN:
+        if phase_name.lower() not in {"", "bracket", "round robin"}:
+            return f"Round Robin - {pool_name}"
+        if identifier:
+            return f"Round Robin - {_format_pool_identifier(identifier)}"
+        return "Round Robin"
+
+    if has_round_robin and group.bracketType == DOUBLE_ELIMINATION:
+        if phase_name.lower() in {"bracket", "elimination bracket", "double elimination"}:
+            return f"Double Elim - Bracket {identifier}" if identifier else "Double Elim"
+        return f"Double Elim - {pool_name}"
+
+    return None

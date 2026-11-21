@@ -71,6 +71,18 @@ async def fetch_event_sets_payload(
 
         if response.status != 200:
             error_text = response.text or str(response.json_data)
+            if per_page > 1 and "query complexity too high" in error_text.lower():
+                smaller_page = per_page // 2
+                log(f"🔄 Retrying event sets with {smaller_page} sets per page")
+                return await fetch_event_sets_payload(
+                    transport=transport,
+                    base_url=base_url,
+                    headers=headers,
+                    event_id=event_id,
+                    timeout_seconds=timeout_seconds,
+                    per_page=smaller_page,
+                    max_pages=(max_pages * per_page + smaller_page - 1) // smaller_page,
+                )
             raise aiohttp.ClientError(f"HTTP {response.status}: {error_text}")
 
         if not isinstance(response.json_data, dict):

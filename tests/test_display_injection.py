@@ -1,7 +1,7 @@
 """Focused tests for injected tournament-display dependencies."""
 
 import pytest
-from textual.widgets import DataTable
+from textual.widgets import DataTable, Static
 
 from matchcaller.api.jsonbin_api import AlertData
 from matchcaller.models.dashboard import DashboardState, ViewMode
@@ -224,6 +224,50 @@ class TestDisplayInjection:
 
             assert source.calls == 2
             assert app.in_progress_sets == 1
+
+    @pytest.mark.asyncio
+    async def test_round_robin_queue_updates_then_switches_to_seeded_elimination(self):
+        pool_state = _single_match_state(state=1)
+        pool_match = pool_state.sets[0].model_copy(update={
+            "pool_label": "Round Robin - Pool A",
+            "bracket_type": "ROUND_ROBIN",
+            "player1": PlayerData(tag="AliceTeam / AlexTeam", team_tags=["AliceTeam", "AlexTeam"]),
+        })
+        first = pool_match.model_copy(update={"round_number": 1})
+        second = pool_match.model_copy(update={"id": 2, "round_number": 2, "updatedAt": 1640995300})
+        ready = pool_match.model_copy(update={"id": 3, "round_number": 3, "state": 2})
+        pool_state.sets = [second, first, ready]
+        fewer_matches = pool_state.model_copy(update={"sets": [first, second]})
+        elimination_state = _single_match_state(state=2)
+        elimination_state.sets[0].poolName = "Elimination Bracket"
+        elimination_state.sets[0].pool_label = "Double Elim - Bracket 1"
+        elimination_state.sets[0].bracket_type = "DOUBLE_ELIMINATION"
+        app = TournamentDisplay(
+            api=StubTournamentSource([pool_state, fewer_matches, elimination_state]),
+            refresh_controller_factory=passive_refresh_controller_factory,
+        )
+
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            table = app.query_one("#pool-pool-a DataTable", DataTable)
+            title = app.query_one("#pool-pool-a .pool-title", Static)
+            assert "Round Robin - Pool A | 3 left" in str(title.render())
+            assert [row.key.value for row in table.ordered_rows[1:]] == ["3", "1", "2"]
+            assert table.get_cell("1", "duration") == "R1"
+            assert table.get_cell("1", "match") == "AliceT/AlexT vs Bob"
+            app.update_display()
+            assert table.get_cell("1", "duration") == "R1"
+
+            await pilot.press("r")
+            await pilot.pause()
+            assert app.query_one("#pool-pool-a DataTable", DataTable) is table
+            assert "Round Robin - Pool A | 2 left" in str(title.render())
+
+            await pilot.press("r")
+            await pilot.pause()
+            title = app.query_one("#pool-elimination-bracket .pool-title", Static)
+            assert "Double Elim - Bracket 1" in str(title.render())
+            assert not app.query("#pool-pool-a")
 
     @pytest.mark.asyncio
     async def test_app_uses_injected_alert_source(self):

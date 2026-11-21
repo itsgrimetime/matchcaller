@@ -140,6 +140,7 @@ class TestAPIParsers:
         result = parse_event_sets_response(validate_startgg_response(event_sets_raw))
 
         assert result.sets[0].player1.tag == "Player1 / Player1Partner"
+        assert result.sets[0].player1.team_tags == ["Player1", "Player1Partner"]
         assert result.sets[0].player2.tag == "Player2 / Player2Partner"
 
     def test_parse_event_sets_response_handles_missing_phase_group(self, event_sets_raw: dict):
@@ -149,6 +150,39 @@ class TestAPIParsers:
 
         assert result.sets[0].displayName == "Unknown Bracket - Winners Round 1"
         assert result.sets[0].poolName == "Unknown Pool"
+
+    @pytest.mark.parametrize("has_round_robin", [True, False])
+    def test_elimination_label_depends_on_event_phases(self, event_sets_raw, has_round_robin):
+        event = event_sets_raw["data"]["event"]
+        event["phases"] = [{"bracketType": "DOUBLE_ELIMINATION"}]
+        if has_round_robin:
+            event["phases"].insert(0, {"bracketType": "ROUND_ROBIN"})
+        event["sets"]["nodes"][0]["phaseGroup"] = {
+            "displayIdentifier": "1",
+            "bracketType": "DOUBLE_ELIMINATION",
+            "phase": {"name": "Elimination Bracket"},
+        }
+
+        result = parse_event_sets_response(validate_startgg_response(event_sets_raw))
+
+        assert result.sets[0].poolName == "Elimination Bracket - Pool 1"
+        expected_label = "Double Elim - Bracket 1" if has_round_robin else None
+        assert result.sets[0].pool_label == expected_label
+
+    def test_round_robin_retains_round_number_and_names_generic_pool(self, event_sets_raw):
+        node = event_sets_raw["data"]["event"]["sets"]["nodes"][0]
+        node["round"] = 4
+        node["phaseGroup"] = {
+            "displayIdentifier": "2",
+            "bracketType": "ROUND_ROBIN",
+            "phase": {"name": "Bracket"},
+        }
+
+        result = parse_event_sets_response(validate_startgg_response(event_sets_raw))
+
+        assert result.sets[0].pool_label == "Round Robin - Pool 2"
+        assert result.sets[0].bracket_type == "ROUND_ROBIN"
+        assert result.sets[0].round_number == 4
 
     def test_parse_tournament_events_payload(self):
         raw_data = {
